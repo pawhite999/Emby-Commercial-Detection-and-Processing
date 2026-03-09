@@ -10,36 +10,65 @@ A cross-platform commercial detection tool written in C# targeting .NET 6/8. Ana
 - **Configurable** — JSON-based configuration with fast/default/accurate presets
 - **Docker support** — Ready-to-use container for TrueNAS, Unraid, and other server environments
 
-## Quick Start
+## Installation
 
-### Prerequisites
+[FFmpeg](https://ffmpeg.org/download.html) must be installed and available on your PATH.
 
-- [.NET 8 SDK](https://dotnet.microsoft.com/download) (for building)
-- [FFmpeg](https://ffmpeg.org/download.html) (must be installed and in PATH)
-
-### Build & Run
+### Linux / macOS
 
 ```bash
-# Clone and build
-git clone https://github.com/yourname/CommDetect.git
-cd CommDetect
-dotnet build -c Release
+curl -fsSL https://raw.githubusercontent.com/pawhite999/Emby-Commercial-Detection-and-Processing/main/install.sh | bash
+```
 
-# Analyze a recording
-dotnet run --project src/CommDetect.CLI -- process /path/to/recording.ts
+Installs to `~/.local/bin/commdetect`. Pass `--system` to install to `/usr/local/bin` instead (requires sudo):
 
-# Use the fast preset
-dotnet run --project src/CommDetect.CLI -- process recording.ts --preset fast
+```bash
+curl -fsSL https://raw.githubusercontent.com/pawhite999/Emby-Commercial-Detection-and-Processing/main/install.sh | bash -s -- --system
+```
+
+### Windows (PowerShell)
+
+```powershell
+irm https://raw.githubusercontent.com/pawhite999/Emby-Commercial-Detection-and-Processing/main/install.ps1 | iex
+```
+
+Installs to `%LOCALAPPDATA%\Programs\commdetect\commdetect.exe` and adds it to your user PATH.
+
+### Manual download
+
+Download the binary for your platform from the [Releases page](https://github.com/pawhite999/Emby-Commercial-Detection-and-Processing/releases/latest), rename it to `commdetect` (or `commdetect.exe` on Windows), and place it somewhere on your PATH.
+
+---
+
+## Quick Start
+
+```bash
+# Analyze a recording (produces an EDL file by default)
+commdetect process /path/to/recording.ts
+
+# Use the fast preset (skips logo detection)
+commdetect process recording.ts --preset fast
 
 # Output multiple formats
-dotnet run --project src/CommDetect.CLI -- process recording.ts --format edl json mkvchapters
+commdetect process recording.ts --format edl json mkvchapters
 
 # Probe a media file
-dotnet run --project src/CommDetect.CLI -- probe recording.ts
+commdetect probe recording.ts
 
 # Generate a config file to customize
-dotnet run --project src/CommDetect.CLI -- config --output myconfig.json
-dotnet run --project src/CommDetect.CLI -- process recording.ts --config myconfig.json
+commdetect config --output commdetect.ini
+commdetect process recording.ts
+```
+
+### Build from Source
+
+Requires [.NET 8 SDK](https://dotnet.microsoft.com/download).
+
+```bash
+git clone https://github.com/pawhite999/Emby-Commercial-Detection-and-Processing.git
+cd Emby-Commercial-Detection-and-Processing
+dotnet build -c Release
+dotnet run --project src/CommDetect.CLI -- process /path/to/recording.ts
 ```
 
 ### Docker
