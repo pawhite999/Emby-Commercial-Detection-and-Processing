@@ -1,0 +1,141 @@
+using System;
+using System.Collections.Generic;
+
+namespace CommDetect.Core;
+
+/// <summary>Metadata probed from a media file.</summary>
+public class MediaInfo
+{
+    public string FilePath { get; set; } = "";
+    public TimeSpan Duration { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public double FrameRate { get; set; }
+    public string VideoCodec { get; set; } = "";
+    public string AudioCodec { get; set; } = "";
+    public int AudioSampleRate { get; set; }
+    public int AudioChannels { get; set; }
+}
+
+/// <summary>A single decoded video frame passed to signal detectors.</summary>
+public class VideoFrame
+{
+    public TimeSpan Timestamp { get; set; }
+    public byte[] Data { get; set; } = Array.Empty<byte>();
+    public int Width { get; set; }
+    public int Height { get; set; }
+}
+
+/// <summary>A window of decoded audio samples passed to signal detectors.</summary>
+public class AudioWindow
+{
+    public TimeSpan Start { get; set; }
+    public TimeSpan End { get; set; }
+    public float[] Samples { get; set; } = Array.Empty<float>();
+    public int SampleRate { get; set; }
+}
+
+/// <summary>A scored analysis window produced by the classifier.</summary>
+public class AnalysisWindow
+{
+    public TimeSpan Start { get; set; }
+    public TimeSpan End { get; set; }
+    public SegmentType Classification { get; set; }
+    public double CommercialProbability { get; set; }
+    public Dictionary<SignalType, double> SignalScores { get; set; } = new();
+}
+
+/// <summary>A contiguous segment of content or commercials.</summary>
+public class ContentSegment
+{
+    public TimeSpan Start { get; set; }
+    public TimeSpan End { get; set; }
+    public SegmentType Type { get; set; }
+    public double Confidence { get; set; }
+    public long StartFrame { get; set; }
+    public long EndFrame { get; set; }
+    public double DurationSeconds => (End - Start).TotalSeconds;
+}
+
+/// <summary>Full result returned by the detection pipeline.</summary>
+public class AnalysisResult
+{
+    public string SourceFile { get; set; } = "";
+    public TimeSpan TotalDuration { get; set; }
+    public double FrameRate { get; set; }
+    public int Width { get; set; }
+    public int Height { get; set; }
+    public List<AnalysisWindow> Windows { get; set; } = new();
+    public List<ContentSegment> Segments { get; set; } = new();
+    public DateTime AnalysisStartedUtc { get; set; }
+    public DateTime AnalysisCompletedUtc { get; set; }
+    public TimeSpan AnalysisDuration => AnalysisCompletedUtc - AnalysisStartedUtc;
+}
+
+/// <summary>Algorithm settings that control the detection pipeline.</summary>
+public class DetectionConfig
+{
+    public double FrameSampleRate { get; set; } = 2.0;
+    public double WindowSizeSeconds { get; set; } = 1.0;
+    public double CommercialThreshold { get; set; } = 0.5;
+    public int SmoothingRadius { get; set; } = 3;
+
+    // Signal weights.
+    // BlackFrame and Silence are "boundary" signals: they fire only at the few
+    // windows where a transition occurs (typically 1–3 s per boundary).
+    // SceneChange and LogoAbsence are "content" signals: once a commercial break
+    // begins they remain active throughout the break.  The content signals must
+    // therefore carry enough weight that their combined score exceeds the
+    // CommercialThreshold even without the boundary signals firing.
+    public double BlackFrameWeight { get; set; } = 0.25;
+    public double SceneChangeWeight { get; set; } = 0.35;
+    public double SilenceWeight { get; set; } = 0.15;
+    public double LogoAbsenceWeight { get; set; } = 0.25;
+    public double AspectRatioWeight { get; set; } = 0.05;
+    public double AudioRepetitionWeight { get; set; } = 0.05;
+
+    // Detector toggles
+    public bool EnableLogoDetection { get; set; } = true;
+    public bool EnableAspectRatioDetection { get; set; } = true;
+    public bool EnableAudioFingerprinting { get; set; } = false;
+
+    // Duration constraints
+    public double MinCommercialDurationSeconds { get; set; } = 10.0;
+    public double MaxCommercialDurationSeconds { get; set; } = 600.0;
+
+    // Output
+    public List<OutputFormat> OutputFormats { get; set; } = new() { OutputFormat.Edl };
+
+    public static DetectionConfig Fast() => new()
+    {
+        FrameSampleRate = 1.0,
+        EnableLogoDetection = false,
+        EnableAspectRatioDetection = false,
+        EnableAudioFingerprinting = false
+    };
+
+    public static DetectionConfig Accurate() => new()
+    {
+        FrameSampleRate = 4.0,
+        EnableLogoDetection = true,
+        EnableAspectRatioDetection = true,
+        EnableAudioFingerprinting = true,
+        CommercialThreshold = 0.45
+    };
+}
+
+/// <summary>Settings for the directory-watching service.</summary>
+public class WatchConfig
+{
+    public List<string> WatchDirectories { get; set; } = new();
+    public List<string> FileExtensions { get; set; } = new() { ".ts", ".mpg", ".mpeg", ".mp4", ".mkv" };
+    public bool Recursive { get; set; } = true;
+    public int StabilityDelaySeconds { get; set; } = 30;
+    public double MinFileSizeMB { get; set; } = 10.0;
+    public int MaxConcurrentJobs { get; set; } = 1;
+    public bool SkipAlreadyProcessed { get; set; } = true;
+    public bool ProcessExistingOnStartup { get; set; } = false;
+    public bool NotifyOnComplete { get; set; } = true;
+    public List<string> ExcludePatterns { get; set; } = new();
+    public List<OutputFormat> OutputFormats { get; set; } = new() { OutputFormat.Edl };
+}

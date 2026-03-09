@@ -1,0 +1,37 @@
+# Build output
+bin/
+obj/
+
+# Compiled distribution binaries
+dist/
+
+# NuGet
+*.nupkg
+*.snupkg
+packages/
+project.lock.json
+project.fragment.lock.json
+artifacts/
+
+# Visual Studio / Rider
+.vs/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Vim swap files
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# dotnet publish output
+publish/
+
+# Test results
+TestResults/
+coverage/
