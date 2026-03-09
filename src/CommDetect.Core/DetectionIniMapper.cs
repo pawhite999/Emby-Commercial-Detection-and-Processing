@@ -34,8 +34,16 @@ public static class DetectionIniMapper
         config.SilenceWeight = ini.GetDouble("Silence", "weight", config.SilenceWeight);
 
         // [Logo]
-        config.EnableLogoDetection = ini.GetBool  ("Logo", "enabled", config.EnableLogoDetection);
-        config.LogoAbsenceWeight   = ini.GetDouble("Logo", "weight",   config.LogoAbsenceWeight);
+        config.EnableLogoDetection        = ini.GetBool  ("Logo", "enabled",              config.EnableLogoDetection);
+        config.LogoAbsenceWeight          = ini.GetDouble("Logo", "weight",                config.LogoAbsenceWeight);
+        config.LogoLearnDurationSeconds   = ini.GetDouble("Logo", "learn_duration",        config.LogoLearnDurationSeconds);
+        config.LogoSceneThreshold         = ini.GetDouble("Logo", "scene_threshold",       config.LogoSceneThreshold);
+        config.LogoClusterMinEventCount   = ini.GetInt   ("Logo", "cluster_min_events",    config.LogoClusterMinEventCount);
+        config.LogoClusterMaxGapSeconds   = ini.GetDouble("Logo", "cluster_max_gap",       config.LogoClusterMaxGapSeconds);
+        config.LogoClusterMinDurationSeconds = ini.GetDouble("Logo", "cluster_min_duration", config.LogoClusterMinDurationSeconds);
+
+        // [SceneChange]
+        config.SceneChangeThreshold = ini.GetDouble("SceneChange", "threshold", config.SceneChangeThreshold);
 
         // [AspectRatio]
         config.EnableAspectRatioDetection = ini.GetBool  ("AspectRatio", "enabled", config.EnableAspectRatioDetection);

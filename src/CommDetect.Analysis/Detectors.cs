@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
+using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
@@ -383,7 +384,8 @@ public class SceneChangeDetector : ISignalDetector
         // select passes only frames whose built-in scene score exceeds the
         // threshold; showinfo logs each such frame (including pts_time) to stderr.
         // -vsync vfr keeps the selected frames at their original timestamps.
-        const string filter = "select='gt(scene,0.35)',showinfo";
+        string threshold = config.SceneChangeThreshold.ToString("F2", CultureInfo.InvariantCulture);
+        string filter = $"select='gt(scene,{threshold})',showinfo";
         string args = $"-i \"{mediaInfo.FilePath}\" -vf \"{filter}\" -vsync vfr -an -f null -";
 
         _logger?.LogDebug("scenechange: {FFmpeg} {Args}", ffmpegPath, args);
@@ -401,10 +403,12 @@ public class SceneChangeDetector : ISignalDetector
         _logger?.LogInformation("SceneChangeDetector: {Count} cut(s) in {File}",
             timestamps.Count, System.IO.Path.GetFileName(mediaInfo.FilePath));
 
-        // Cluster nearby cuts into contiguous segments (≥5 cuts, ≥30 s long,
-        // with gaps no wider than 35 s).  BuildWindowedScores then gives every
-        // window inside a segment a score of 1.0.
-        var segments = DetectorHelpers.ClusterIntoSegments(timestamps);
+        // Cluster nearby cuts into contiguous segments.  BuildWindowedScores then
+        // gives every window inside a segment a score of 1.0.
+        var segments = DetectorHelpers.ClusterIntoSegments(timestamps,
+            config.LogoClusterMaxGapSeconds,
+            config.LogoClusterMinDurationSeconds,
+            config.LogoClusterMinEventCount);
         foreach (var (s, e) in segments)
             _logger?.LogDebug("  scene segment: {S:F1}s → {E:F1}s", s.TotalSeconds, e.TotalSeconds);
 
@@ -415,29 +419,61 @@ public class SceneChangeDetector : ISignalDetector
 // ── LogoDetector ─────────────────────────────────────────────────────────────
 
 /// <summary>
-/// Detects network-logo absence by monitoring the bottom-right corner of the frame.
+/// Detects network-logo absence by monitoring all four corners of the frame.
 ///
-/// Most US broadcast networks display a semi-transparent "bug" logo in the
-/// bottom-right corner during program content.  During commercial breaks the
-/// logo is absent, so that corner region exhibits much higher frame-to-frame
-/// variation.
+/// Most US broadcast networks display a semi-transparent "bug" logo in one corner
+/// during program content.  During commercial breaks the logo is absent, so that
+/// corner region shows much higher frame-to-frame variation.
 ///
-/// FFmpeg command:
-///   ffmpeg -i {file}
-///     -vf "crop=iw/10:ih/10:9*iw/10:9*ih/10,select='gt(scene,0.2)',showinfo"
-///     -vsync vfr -an -f null -
+/// Two-phase approach:
 ///
-/// The crop isolates the bottom-right 10 × 10 % patch; select then passes only
-/// frames where that patch changes more than 20 % (scene score > 0.2).  High
-/// corner-change density → logo absent → commercial break.
+///   Phase 1 — Learning (first LogoLearnDurationSeconds):
+///     All four corners and two full-width ticker bands are probed in parallel.
+///     Corners with activity > 0.5 events/s are classified as ticker-affected
+///     (e.g. live weather/news crawl) and excluded from full detection.
+///     Full-width bands with activity > 1.5 events/s trigger a warning log.
 ///
-/// Limitation: assumes bottom-right corner.  Networks that place their logo
-/// elsewhere (e.g. top-right, bottom-left) will produce weaker signals.
+///   Phase 2 — Detection (full recording):
+///     Active (non-ticker) corners are analysed in parallel.  All timestamps
+///     from every active corner are merged, then clustered and scored exactly as
+///     before, so that an entire commercial break scores 1.0 across its windows.
+///
+/// Corner crop filters (10 % × 10 % patches):
+///   top-left     crop=iw/10:ih/10:0:0
+///   top-right    crop=iw/10:ih/10:9*iw/10:0
+///   bottom-left  crop=iw/10:ih/10:0:9*ih/10
+///   bottom-right crop=iw/10:ih/10:9*iw/10:9*ih/10
+///
+/// Ticker-band crop filters (full-width, 1/12 height):
+///   top-band     crop=iw:ih/12:0:0
+///   bottom-band  crop=iw:ih/12:0:11*ih/12
 /// </summary>
 public class LogoDetector : ISignalDetector
 {
     private readonly IFFmpegLocator _ffmpegLocator;
     private readonly ILogger<LogoDetector>? _logger;
+
+    // 10 % × 10 % corner patches
+    private static readonly (string Name, string Crop)[] Corners =
+    [
+        ("top-left",     "crop=iw/10:ih/10:0:0"),
+        ("top-right",    "crop=iw/10:ih/10:9*iw/10:0"),
+        ("bottom-left",  "crop=iw/10:ih/10:0:9*ih/10"),
+        ("bottom-right", "crop=iw/10:ih/10:9*iw/10:9*ih/10"),
+    ];
+
+    // Full-width ticker bands (1/12 height)
+    private static readonly (string Name, string Crop)[] TickerBands =
+    [
+        ("top-band",    "crop=iw:ih/12:0:0"),
+        ("bottom-band", "crop=iw:ih/12:0:11*ih/12"),
+    ];
+
+    // Corner activity above this threshold (events/s) during learning → ticker-affected → excluded
+    private const double CornerTickerThreshold = 0.5;
+
+    // Band activity above this (events/s) → warn that a news/weather crawl is present
+    private const double BandTickerThreshold = 1.5;
 
     public LogoDetector(IFFmpegLocator ffmpegLocator,
         ILogger<LogoDetector>? logger = null)
@@ -461,34 +497,182 @@ public class LogoDetector : ISignalDetector
         string ffmpegPath = _ffmpegLocator.FindFFmpeg()
             ?? throw new InvalidOperationException("FFmpeg not found.");
 
-        // Crop to bottom-right 10 % × 10 % patch; select frames where the
-        // patch scene score > 0.2 (lower threshold than full-frame detection
-        // because the patch is tiny and the logo is subtle).
-        const string filter =
-            "crop=iw/10:ih/10:9*iw/10:9*ih/10,select='gt(scene,0.2)',showinfo";
-        string args = $"-i \"{mediaInfo.FilePath}\" -vf \"{filter}\" -vsync vfr -an -f null -";
+        // ── Phase 1: Learning ─────────────────────────────────────────────────
+        double learnSecs = Math.Min(config.LogoLearnDurationSeconds, mediaInfo.Duration.TotalSeconds);
+        _logger?.LogDebug("LogoDetector: learning phase ({LearnSecs:F0}s) — probing {N} corners + {B} bands",
+            learnSecs, Corners.Length, TickerBands.Length);
 
-        _logger?.LogDebug("logodetect: {FFmpeg} {Args}", ffmpegPath, args);
+        // Probe corners and bands in parallel over the learning window
+        var learnTasks = Corners
+            .Concat(TickerBands)
+            .Select(r => MeasureActivityAsync(ffmpegPath, mediaInfo.FilePath, r.Crop, r.Name, learnSecs, config.LogoSceneThreshold, cancellationToken))
+            .ToArray();
 
-        string stderr = await DetectorHelpers.RunFFmpegForStderrAsync(ffmpegPath, args, cancellationToken);
+        var learnResults = await Task.WhenAll(learnTasks);
+
+        // Classify corners — exclude those with ticker-level activity
+        var activeCorners = new List<(string Name, string Crop)>();
+        for (int i = 0; i < Corners.Length; i++)
+        {
+            double eps = learnResults[i].EventsPerSec;
+            bool isTicker = eps > CornerTickerThreshold;
+            _logger?.LogInformation(
+                "LogoDetector: corner {Corner} → {Eps:F2} events/s {Status}",
+                Corners[i].Name, eps,
+                isTicker ? "(TICKER — excluded)" : "(active)");
+
+            if (!isTicker)
+                activeCorners.Add(Corners[i]);
+        }
+
+        // Log ticker-band results
+        for (int i = 0; i < TickerBands.Length; i++)
+        {
+            double eps = learnResults[Corners.Length + i].EventsPerSec;
+            if (eps > BandTickerThreshold)
+                _logger?.LogWarning(
+                    "LogoDetector: {Band} has high activity ({Eps:F2} events/s) — weather/news crawl likely",
+                    TickerBands[i].Name, eps);
+            else
+                _logger?.LogDebug("LogoDetector: {Band} → {Eps:F2} events/s", TickerBands[i].Name, eps);
+        }
+
+        if (activeCorners.Count == 0)
+        {
+            _logger?.LogWarning("LogoDetector: all corners are ticker-affected; logo detection suppressed.");
+            return Array.Empty<(TimeSpan, TimeSpan, double)>();
+        }
+
+        // ── Phase 2: Full detection on active corners in parallel ─────────────
+        _logger?.LogDebug("LogoDetector: detecting on {N} corner(s): {Names}",
+            activeCorners.Count,
+            string.Join(", ", activeCorners.Select(c => c.Name)));
+
+        var detectTasks = activeCorners
+            .Select(c => DetectCornerAsync(ffmpegPath, mediaInfo.FilePath, c.Crop, c.Name, config.LogoSceneThreshold, cancellationToken))
+            .ToArray();
+
+        var cornerTimestamps = await Task.WhenAll(detectTasks);
+
+        // Log per-corner event counts
+        for (int i = 0; i < activeCorners.Count; i++)
+            _logger?.LogInformation(
+                "LogoDetector: corner {Corner} → {Count} event(s)",
+                activeCorners[i].Name, cornerTimestamps[i].Count);
+
+        // Merge timestamps, requiring consensus from ≥2 corners when possible.
+        // This prevents false positives when the network bug temporarily moves to a
+        // different corner (e.g. during a live performance) — in that case only one
+        // corner loses its logo while the others remain stable.
+        var allTimestamps = MergeWithConsensus(
+            cornerTimestamps, mediaInfo.Duration, activeCorners.Count);
+
+        _logger?.LogInformation(
+            "LogoDetector: {Total} consensus event(s) from {N} corner(s) in {File}",
+            allTimestamps.Count, activeCorners.Count,
+            System.IO.Path.GetFileName(mediaInfo.FilePath));
+
+        // Cluster and score
+        var segments = DetectorHelpers.ClusterIntoSegments(allTimestamps,
+            config.LogoClusterMaxGapSeconds,
+            config.LogoClusterMinDurationSeconds,
+            config.LogoClusterMinEventCount);
+        foreach (var (s, e) in segments)
+            _logger?.LogDebug("  logo-absent segment: {S:F1}s → {E:F1}s", s.TotalSeconds, e.TotalSeconds);
+
+        return DetectorHelpers.BuildWindowedScores(segments, mediaInfo.Duration, config.WindowSizeSeconds);
+    }
+
+    /// <summary>
+    /// Probes <paramref name="learnSecs"/> of <paramref name="filePath"/> through the
+    /// <paramref name="crop"/> filter and returns the events-per-second activity rate.
+    /// </summary>
+    private async Task<(string Name, double EventsPerSec)> MeasureActivityAsync(
+        string ffmpegPath, string filePath, string crop, string name,
+        double learnSecs, double sceneThreshold, CancellationToken ct)
+    {
+        string thresh = sceneThreshold.ToString("F2", CultureInfo.InvariantCulture);
+        string filter = $"{crop},select='gt(scene,{thresh})',showinfo";
+        string args   = $"-i \"{filePath}\" -t {learnSecs.ToString(CultureInfo.InvariantCulture)}" +
+                        $" -vf \"{filter}\" -vsync vfr -an -f null -";
+
+        string stderr = await DetectorHelpers.RunFFmpegForStderrAsync(ffmpegPath, args, ct);
+        int    count  = DetectorHelpers.ShowInfoPtsTime.Matches(stderr).Count;
+        double eps    = learnSecs > 0 ? count / learnSecs : 0.0;
+
+        return (name, eps);
+    }
+
+    /// <summary>
+    /// Merges per-corner timestamp lists, requiring at least 2 corners to agree
+    /// within a short bucket window before including their timestamps.
+    ///
+    /// When only 1 active corner exists, consensus is impossible and all
+    /// timestamps are returned as-is (original behaviour).
+    ///
+    /// The 5-second bucket size is deliberately coarser than the 1-second
+    /// analysis window so that near-simultaneous events from different corners
+    /// (which rarely land on exactly the same frame) are treated as agreeing.
+    /// </summary>
+    private static List<TimeSpan> MergeWithConsensus(
+        List<TimeSpan>[] cornerTimestamps, TimeSpan totalDuration, int activeCount)
+    {
+        if (activeCount < 2)
+        {
+            // Only one corner — no consensus possible; return its timestamps directly
+            var single = new List<TimeSpan>();
+            if (cornerTimestamps.Length > 0) single.AddRange(cornerTimestamps[0]);
+            return single;
+        }
+
+        const double BucketSecs = 5.0;
+        int bucketCount = (int)Math.Ceiling(totalDuration.TotalSeconds / BucketSecs) + 1;
+        var votes = new int[bucketCount];
+
+        // First pass: count how many corners fired in each bucket
+        foreach (var cornerList in cornerTimestamps)
+            foreach (var ts in cornerList)
+            {
+                int b = (int)(ts.TotalSeconds / BucketSecs);
+                if (b < votes.Length) votes[b]++;
+            }
+
+        // Second pass: collect timestamps from buckets where ≥2 corners agreed
+        var result = new List<TimeSpan>();
+        foreach (var cornerList in cornerTimestamps)
+            foreach (var ts in cornerList)
+            {
+                int b = (int)(ts.TotalSeconds / BucketSecs);
+                if (b < votes.Length && votes[b] >= 2)
+                    result.Add(ts);
+            }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Runs the full-file logo-absence scan for a single <paramref name="crop"/> region
+    /// and returns all detected event timestamps.
+    /// </summary>
+    private async Task<List<TimeSpan>> DetectCornerAsync(
+        string ffmpegPath, string filePath, string crop, string name,
+        double sceneThreshold, CancellationToken ct)
+    {
+        string thresh = sceneThreshold.ToString("F2", CultureInfo.InvariantCulture);
+        string filter = $"{crop},select='gt(scene,{thresh})',showinfo";
+        string args   = $"-i \"{filePath}\" -vf \"{filter}\" -vsync vfr -an -f null -";
+
+        _logger?.LogDebug("logodetect ({Corner}): {FFmpeg} {Args}", name, ffmpegPath, args);
+
+        string stderr = await DetectorHelpers.RunFFmpegForStderrAsync(ffmpegPath, args, ct);
 
         var timestamps = new List<TimeSpan>();
         foreach (Match m in DetectorHelpers.ShowInfoPtsTime.Matches(stderr))
         {
             double t = DetectorHelpers.ParseDouble(m.Groups[1].Value);
             timestamps.Add(TimeSpan.FromSeconds(t));
-            _logger?.LogDebug("  logo absent at {T:F3}s", t);
         }
 
-        _logger?.LogInformation("LogoDetector: {Count} corner-change event(s) in {File}",
-            timestamps.Count, System.IO.Path.GetFileName(mediaInfo.FilePath));
-
-        // Same clustering as SceneChangeDetector: group bursts of corner-change
-        // events into segments and score every window in the segment 1.0.
-        var segments = DetectorHelpers.ClusterIntoSegments(timestamps);
-        foreach (var (s, e) in segments)
-            _logger?.LogDebug("  logo-absent segment: {S:F1}s → {E:F1}s", s.TotalSeconds, e.TotalSeconds);
-
-        return DetectorHelpers.BuildWindowedScores(segments, mediaInfo.Duration, config.WindowSizeSeconds);
+        return timestamps;
     }
 }

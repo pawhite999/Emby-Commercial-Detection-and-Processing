@@ -95,12 +95,30 @@ public class DetectionConfig
     public double AudioRepetitionWeight { get; set; } = 0.05;
 
     // Detector toggles
+    public double LogoLearnDurationSeconds { get; set; } = 120.0;
     public bool EnableLogoDetection { get; set; } = true;
     public bool EnableAspectRatioDetection { get; set; } = true;
     public bool EnableAudioFingerprinting { get; set; } = false;
 
+    // Logo detector tuning
+    // scene_threshold: how much a corner frame must change to count as an event.
+    //   Lower = more sensitive (useful for slow-moving local content).
+    public double LogoSceneThreshold { get; set; } = 0.20;
+    // cluster_min_events: minimum logo-change events needed to form a commercial segment.
+    //   Lower = catches sparse-cut commercials (local daytime); higher = fewer false positives.
+    public int LogoClusterMinEventCount { get; set; } = 5;
+    // cluster_max_gap: max seconds between events before a new cluster is started.
+    public double LogoClusterMaxGapSeconds { get; set; } = 35.0;
+    // cluster_min_duration: minimum seconds a cluster must span to be kept.
+    public double LogoClusterMinDurationSeconds { get; set; } = 30.0;
+
+    // Scene change detector tuning
+    // threshold: scene-score a frame must exceed to be counted as a cut (0–1).
+    //   Lower = more sensitive; higher = only hard cuts.
+    public double SceneChangeThreshold { get; set; } = 0.35;
+
     // Duration constraints
-    public double MinCommercialDurationSeconds { get; set; } = 10.0;
+    public double MinCommercialDurationSeconds { get; set; } = 30.0;
     public double MaxCommercialDurationSeconds { get; set; } = 600.0;
 
     // Output
