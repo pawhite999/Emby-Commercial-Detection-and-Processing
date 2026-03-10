@@ -7,8 +7,9 @@ GITHUB_API="https://api.github.com/repos/${REPO}/releases/latest"
 
 # ── Detect OS ────────────────────────────────────────────────────────────────
 case "$(uname -s)" in
-    Linux*)  OS="linux"  ;;
-    Darwin*) OS="osx"    ;;
+    Linux*)   OS="linux"   ;;
+    Darwin*)  OS="osx"     ;;
+    FreeBSD*) OS="freebsd" ;;
     *)
         echo "Unsupported OS: $(uname -s)" >&2
         exit 1
@@ -17,7 +18,7 @@ esac
 
 # ── Detect architecture ───────────────────────────────────────────────────────
 case "$(uname -m)" in
-    x86_64)        ARCH="x64"   ;;
+    x86_64|amd64) ARCH="x64"   ;;
     aarch64|arm64) ARCH="arm64" ;;
     *)
         echo "Unsupported architecture: $(uname -m)" >&2
@@ -25,9 +26,13 @@ case "$(uname -m)" in
         ;;
 esac
 
-# ── Alpine Linux uses musl libc ───────────────────────────────────────────────
+# ── Platform-specific overrides ───────────────────────────────────────────────
 if [ "$OS" = "linux" ] && [ -f /etc/alpine-release ]; then
+    # Alpine uses musl libc — needs its own build
     PLATFORM="linux-musl-x64"
+elif [ "$OS" = "freebsd" ]; then
+    # FreeBSD: only x64 is published
+    PLATFORM="freebsd-x64"
 else
     PLATFORM="${OS}-${ARCH}"
 fi

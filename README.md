@@ -92,15 +92,31 @@ MEDIA_DIR=/mnt/media OUTPUT_DIR=./output docker-compose -f docker/docker-compose
 | Windows x64 | ✅ Fully supported | |
 | Windows ARM64 | ✅ Fully supported | |
 | macOS x64 (Intel) | ✅ Fully supported | |
-| macOS ARM64 (Apple Silicon) | ✅ Fully supported | .NET 6+ |
+| macOS ARM64 (Apple Silicon) | ✅ Fully supported | |
 | Linux x64 (Debian/Ubuntu/Fedora/etc.) | ✅ Fully supported | |
 | Linux ARM64 | ✅ Fully supported | Raspberry Pi 4+, etc. |
 | Alpine Linux (musl) | ✅ Fully supported | Docker-friendly |
-| FreeBSD/TrueNAS | ⚠️ Community support | Use Docker or jail with Linux base |
+| FreeBSD x64 | ⚙️ Build from source | TrueNAS CORE, FreeBSD 13+ |
 
-### FreeBSD / TrueNAS
+### FreeBSD / TrueNAS CORE
 
-The recommended approach for FreeBSD is to run CommDetect inside a Docker container or a jail with a Debian/Ubuntu base. See the Docker section above.
+The .NET SDK cannot cross-compile a self-contained FreeBSD binary from Linux, so no pre-built binary is provided. Build natively on the FreeBSD machine:
+
+```bash
+# Install prerequisites
+pkg install dotnet-sdk-8.0 ffmpeg git
+
+# Clone and build
+git clone https://github.com/pawhite999/Emby-Commercial-Detection-and-Processing.git
+cd Emby-Commercial-Detection-and-Processing
+dotnet publish src/CommDetect.CLI/CommDetect.CLI.csproj \
+    -c Release -r freebsd-x64 --self-contained true \
+    -p:PublishSingleFile=true -o ./out
+cp out/commdetect /usr/local/bin/commdetect
+chmod +x /usr/local/bin/commdetect
+```
+
+**TrueNAS SCALE** is Linux-based — use the `linux-x64` binary instead.
 
 ## Architecture
 
