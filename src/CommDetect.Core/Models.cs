@@ -111,6 +111,21 @@ public class DetectionConfig
     public double LogoClusterMaxGapSeconds { get; set; } = 35.0;
     // cluster_min_duration: minimum seconds a cluster must span to be kept.
     public double LogoClusterMinDurationSeconds { get; set; } = 30.0;
+    /// <summary>SSIM score below this → logo absent (commercial). Range 0–1; default 0.5.</summary>
+    public double LogoSsimThreshold { get; set; } = 0.50;
+    /// <summary>
+    /// Corners with Phase 1 rate > (min active corner rate × this ratio) are excluded.
+    /// Filters noisy corners that fire more than the stable logo corner(s).
+    /// 1.5 = keep corners within 50% of the quietest corner's rate.
+    /// </summary>
+    public double LogoCornerFilterRatio { get; set; } = 1.5;
+
+    /// <summary>
+    /// Corner activity rate (events/s) above which a corner is classified as ticker-affected
+    /// and excluded from logo detection. Raise this for channels where the network bug
+    /// corners have moderate activity that falls just above the default 0.5 threshold.
+    /// </summary>
+    public double LogoCornerTickerThreshold { get; set; } = 0.5;
 
     // Scene change detector tuning
     // threshold: scene-score a frame must exceed to be counted as a cut (0–1).
@@ -120,6 +135,26 @@ public class DetectionConfig
     // Duration constraints
     public double MinCommercialDurationSeconds { get; set; } = 30.0;
     public double MaxCommercialDurationSeconds { get; set; } = 600.0;
+
+    /// <summary>
+    /// Ignore commercial detections that start within the first N seconds of the recording.
+    /// Protects cold opens and opening credits from being misclassified as commercials.
+    /// Set to 0 to disable (default).
+    /// </summary>
+    public double SkipStartSeconds { get; set; } = 0.0;
+
+    /// <summary>
+    /// Ignore commercial detections that end within the last N seconds of the recording.
+    /// Protects end-of-show content from being cut when the show ends before the recording does.
+    /// Set to 0 to disable (default).
+    /// </summary>
+    public double SkipEndSeconds { get; set; } = 0.0;
+
+    // Emby Server API integration
+    // When server_url and api_key are set, CommDetect queries Emby for the recording's
+    // pre/post padding and uses them to automatically set SkipStartSeconds/SkipEndSeconds.
+    public string EmbyServerUrl { get; set; } = "";
+    public string EmbyApiKey    { get; set; } = "";
 
     // Output
     public List<OutputFormat> OutputFormats { get; set; } = new() { OutputFormat.Edl };

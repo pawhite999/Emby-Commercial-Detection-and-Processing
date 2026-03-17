@@ -469,11 +469,13 @@ public class LogoDetector : ISignalDetector
         ("bottom-band", "crop=iw:ih/12:0:11*ih/12"),
     ];
 
-    // Corner activity above this threshold (events/s) during learning → ticker-affected → excluded
-    private const double CornerTickerThreshold = 0.5;
-
-    // Band activity above this (events/s) → warn that a news/weather crawl is present
+    // Full-width band activity above this (events/s) → warn that a news/weather crawl is present
     private const double BandTickerThreshold = 1.5;
+
+    // Parses FFmpeg SSIM stats lines: "n:1 Y:0.998 U:0.999 V:0.997 All:0.998 (47.4)"
+    private static readonly Regex SsimLineRx = new(
+        @"n:(\d+)\s+\S+\s+\S+\s+\S+\s+All:([\d.]+)",
+        RegexOptions.Compiled);
 
     public LogoDetector(IFFmpegLocator ffmpegLocator,
         ILogger<LogoDetector>? logger = null)
@@ -497,6 +499,12 @@ public class LogoDetector : ISignalDetector
         string ffmpegPath = _ffmpegLocator.FindFFmpeg()
             ?? throw new InvalidOperationException("FFmpeg not found.");
 
+        if (config.LogoAbsenceWeight <= 0)
+        {
+            _logger?.LogInformation("LogoDetector: weight is 0 — skipping.");
+            return Array.Empty<(TimeSpan, TimeSpan, double)>();
+        }
+
         // ── Phase 1: Learning ─────────────────────────────────────────────────
         double learnSecs = Math.Min(config.LogoLearnDurationSeconds, mediaInfo.Duration.TotalSeconds);
         _logger?.LogDebug("LogoDetector: learning phase ({LearnSecs:F0}s) — probing {N} corners + {B} bands",
@@ -512,17 +520,45 @@ public class LogoDetector : ISignalDetector
 
         // Classify corners — exclude those with ticker-level activity
         var activeCorners = new List<(string Name, string Crop)>();
+        var activeRates   = new List<double>();
         for (int i = 0; i < Corners.Length; i++)
         {
             double eps = learnResults[i].EventsPerSec;
-            bool isTicker = eps > CornerTickerThreshold;
+            bool isTicker = eps > config.LogoCornerTickerThreshold;
             _logger?.LogInformation(
                 "LogoDetector: corner {Corner} → {Eps:F2} events/s {Status}",
                 Corners[i].Name, eps,
                 isTicker ? "(TICKER — excluded)" : "(active)");
 
             if (!isTicker)
+            {
                 activeCorners.Add(Corners[i]);
+                activeRates.Add(eps);
+            }
+        }
+
+        // Filter high-noise corners: keep only corners within LogoCornerFilterRatio
+        // of the quietest corner's rate. This prevents corners without a logo from
+        // polluting the consensus with scene-change noise.
+        if (activeCorners.Count > 1 && config.LogoCornerFilterRatio > 0)
+        {
+            double minRate  = activeRates.Min();
+            double rateLimit = minRate * config.LogoCornerFilterRatio;
+            var filtered = activeCorners
+                .Zip(activeRates, (c, r) => (Corner: c, Rate: r))
+                .Where(x => x.Rate <= rateLimit)
+                .ToList();
+
+            if (filtered.Count > 0 && filtered.Count < activeCorners.Count)
+            {
+                foreach (var (c, r) in activeCorners.Zip(activeRates, (c, r) => (c, r))
+                    .Where(x => x.r > rateLimit))
+                    _logger?.LogInformation(
+                        "LogoDetector: corner {Corner} excluded by noise filter ({Eps:F2} events/s > {Limit:F2})",
+                        c.Name, r, rateLimit);
+
+                activeCorners = filtered.Select(x => x.Corner).ToList();
+            }
         }
 
         // Log ticker-band results
@@ -543,16 +579,32 @@ public class LogoDetector : ISignalDetector
             return Array.Empty<(TimeSpan, TimeSpan, double)>();
         }
 
+        // Extract reference frames for SSIM comparison (at learnSecs/2, reliably program content)
+        double refTime = learnSecs / 2.0;
+        var refTasks = activeCorners
+            .Select(c => ExtractReferenceFrameAsync(ffmpegPath, mediaInfo.FilePath, c.Crop, c.Name, refTime, cancellationToken))
+            .ToArray();
+        var refPaths = await Task.WhenAll(refTasks);
+
         // ── Phase 2: Full detection on active corners in parallel ─────────────
         _logger?.LogDebug("LogoDetector: detecting on {N} corner(s): {Names}",
             activeCorners.Count,
             string.Join(", ", activeCorners.Select(c => c.Name)));
 
-        var detectTasks = activeCorners
-            .Select(c => DetectCornerAsync(ffmpegPath, mediaInfo.FilePath, c.Crop, c.Name, config.LogoSceneThreshold, cancellationToken))
-            .ToArray();
+        var detectTasks = activeCorners.Select((c, i) =>
+            refPaths[i] != null
+                ? SsimDetectCornerAsync(ffmpegPath, mediaInfo.FilePath, c.Crop, c.Name,
+                      refPaths[i]!, config.LogoSsimThreshold,
+                      mediaInfo.Duration.TotalSeconds, cancellationToken)
+                : DetectCornerAsync(ffmpegPath, mediaInfo.FilePath, c.Crop, c.Name,
+                      config.LogoSceneThreshold, cancellationToken)
+        ).ToArray();
 
         var cornerTimestamps = await Task.WhenAll(detectTasks);
+
+        // Cleanup reference files
+        foreach (var p in refPaths)
+            if (p != null) try { System.IO.File.Delete(p); } catch { /* ignore */ }
 
         // Log per-corner event counts
         for (int i = 0; i < activeCorners.Count; i++)
@@ -648,6 +700,95 @@ public class LogoDetector : ISignalDetector
             }
 
         return result;
+    }
+
+    private async Task<string?> ExtractReferenceFrameAsync(
+        string ffmpegPath, string filePath, string crop, string cornerName,
+        double atSeconds, CancellationToken ct)
+    {
+        // Safe temp path: no spaces, no special chars
+        string safeName   = Regex.Replace(System.IO.Path.GetFileNameWithoutExtension(filePath), @"[^\w]", "_");
+        string safeCorner = cornerName.Replace("-", "_");
+        string refPath    = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+            $"commdetect_ref_{safeCorner}_{safeName}.png");
+
+        string args = $"-y -ss {atSeconds.ToString("F1", CultureInfo.InvariantCulture)}" +
+                      $" -i \"{filePath}\" -vf \"{crop}\" -frames:v 1 \"{refPath}\"";
+        try
+        {
+            await DetectorHelpers.RunFFmpegForStderrAsync(ffmpegPath, args, ct);
+            if (System.IO.File.Exists(refPath) && new System.IO.FileInfo(refPath).Length > 0)
+            {
+                _logger?.LogDebug("LogoDetector: reference frame extracted for {Corner} at {T:F1}s → {Path}",
+                    cornerName, atSeconds, refPath);
+                return refPath;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogWarning(
+                "LogoDetector: reference extraction failed for {Corner}: {Msg} — falling back to scene-change detection",
+                cornerName, ex.Message);
+        }
+        return null;
+    }
+
+    private async Task<List<TimeSpan>> SsimDetectCornerAsync(
+        string ffmpegPath, string filePath, string crop, string cornerName,
+        string refPath, double ssimThreshold, double totalSeconds, CancellationToken ct)
+    {
+        string statsFile = System.IO.Path.GetTempFileName();
+        try
+        {
+            // fps=1/5 → one frame every 5 seconds (sufficient for commercial break detection)
+            // [out] + explicit -map tell FFmpeg exactly what stream to write
+            // -t {totalSeconds} hard-caps the output at the video duration;
+            //   without this, -loop 1 on the reference image causes FFmpeg to run forever
+            string filter = $"[0:v]fps=1/5,{crop}[probe];[probe][1:v]ssim=stats_file='{statsFile}'[out]";
+            string dur    = totalSeconds.ToString("F1", CultureInfo.InvariantCulture);
+            string args   = $"-hide_banner -loglevel error -i \"{filePath}\" -loop 1 -i \"{refPath}\"" +
+                            $" -filter_complex \"{filter}\" -map \"[out]\" -t {dur} -f null -";
+
+            _logger?.LogDebug("LogoDetector SSIM ({Corner}): threshold={T:F2}", cornerName, ssimThreshold);
+
+            await DetectorHelpers.RunFFmpegForStderrAsync(ffmpegPath, args, ct);
+
+            string stats  = await System.IO.File.ReadAllTextAsync(statsFile, ct);
+            var events    = ParseSsimEvents(stats, ssimThreshold);
+
+            _logger?.LogInformation(
+                "LogoDetector SSIM ({Corner}): {Count} logo-absent second(s) below threshold {T:F2}",
+                cornerName, events.Count, ssimThreshold);
+
+            return events;
+        }
+        finally
+        {
+            if (System.IO.File.Exists(statsFile)) try { System.IO.File.Delete(statsFile); } catch { /* ignore */ }
+        }
+    }
+
+    /// <summary>
+    /// Parses the FFmpeg SSIM stats file and returns timestamps (seconds) where
+    /// the SSIM All score falls below <paramref name="threshold"/>, indicating
+    /// the corner looks different from the reference (logo absent).
+    /// Frame n is 1-indexed; with fps=1 sampling, t = (n-1) seconds.
+    /// </summary>
+    private List<TimeSpan> ParseSsimEvents(string stats, double threshold)
+    {
+        var events = new List<TimeSpan>();
+        foreach (Match m in SsimLineRx.Matches(stats))
+        {
+            int    frame = int.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
+            double ssim  = DetectorHelpers.ParseDouble(m.Groups[2].Value);
+            if (ssim < threshold)
+            {
+                double t = (frame - 1) * 5.0; // n is 1-indexed; fps=1/5 → each frame is 5s apart
+                events.Add(TimeSpan.FromSeconds(t));
+                _logger?.LogDebug("  logo absent at {T:F0}s (SSIM={S:F3})", t, ssim);
+            }
+        }
+        return events;
     }
 
     /// <summary>

@@ -23,6 +23,8 @@ public static class DetectionIniMapper
         config.SmoothingRadius             = ini.GetInt   ("Detection", "smoothing_radius",        config.SmoothingRadius);
         config.MinCommercialDurationSeconds = ini.GetDouble("Detection", "min_commercial_seconds", config.MinCommercialDurationSeconds);
         config.MaxCommercialDurationSeconds = ini.GetDouble("Detection", "max_commercial_seconds", config.MaxCommercialDurationSeconds);
+        config.SkipStartSeconds            = ini.GetDouble("Detection", "skip_start_seconds",     config.SkipStartSeconds);
+        config.SkipEndSeconds              = ini.GetDouble("Detection", "skip_end_seconds",       config.SkipEndSeconds);
 
         // [BlackFrame]
         config.BlackFrameWeight = ini.GetDouble("BlackFrame", "weight", config.BlackFrameWeight);
@@ -41,6 +43,9 @@ public static class DetectionIniMapper
         config.LogoClusterMinEventCount   = ini.GetInt   ("Logo", "cluster_min_events",    config.LogoClusterMinEventCount);
         config.LogoClusterMaxGapSeconds   = ini.GetDouble("Logo", "cluster_max_gap",       config.LogoClusterMaxGapSeconds);
         config.LogoClusterMinDurationSeconds = ini.GetDouble("Logo", "cluster_min_duration", config.LogoClusterMinDurationSeconds);
+        config.LogoSsimThreshold          = ini.GetDouble("Logo", "logo_ssim_threshold",         config.LogoSsimThreshold);
+        config.LogoCornerFilterRatio      = ini.GetDouble("Logo", "logo_corner_filter_ratio",    config.LogoCornerFilterRatio);
+        config.LogoCornerTickerThreshold  = ini.GetDouble("Logo", "corner_ticker_threshold",     config.LogoCornerTickerThreshold);
 
         // [SceneChange]
         config.SceneChangeThreshold = ini.GetDouble("SceneChange", "threshold", config.SceneChangeThreshold);
@@ -52,6 +57,10 @@ public static class DetectionIniMapper
         // [AudioFingerprint]
         config.EnableAudioFingerprinting = ini.GetBool  ("AudioFingerprint", "enabled", config.EnableAudioFingerprinting);
         config.AudioRepetitionWeight     = ini.GetDouble("AudioFingerprint", "weight",  config.AudioRepetitionWeight);
+
+        // [Emby]
+        config.EmbyServerUrl = ini.GetString("Emby", "server_url", config.EmbyServerUrl) ?? "";
+        config.EmbyApiKey    = ini.GetString("Emby", "api_key",    config.EmbyApiKey)    ?? "";
 
         // [Output]
         var formatStrings = ini.GetStringArray("Output", "formats");
