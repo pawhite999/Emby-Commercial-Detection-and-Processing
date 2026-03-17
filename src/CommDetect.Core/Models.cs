@@ -163,6 +163,15 @@ public class DetectionConfig
     // Falls back to ini values if the file has no PSIP data (e.g. non-TS sources).
     public bool PsipEnabled { get; set; } = true;
 
+    // XDS (Extended Data Services / EIA-608) program boundary detection.
+    // Reads Class 1 (Current Program) packets from the EIA-608 closed-caption stream
+    // embedded in the video track. Unlike PSIP, XDS survives Emby/HDHomeRun DVR recording
+    // because the video track is preserved. Provides minute-precision program boundaries
+    // from the broadcast signal with no external EPG required.
+    // Used as a fallback when PSIP is unavailable or disabled.
+    // Overrides skip_start_seconds/skip_end_seconds when successful.
+    public bool XdsEnabled { get; set; } = true;
+
     // Output
     public List<OutputFormat> OutputFormats { get; set; } = new() { OutputFormat.Edl };
 

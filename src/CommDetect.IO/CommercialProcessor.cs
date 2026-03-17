@@ -235,7 +235,7 @@ public class CommercialProcessor
 
         _logger?.LogDebug("Running: {Mkvmerge} {Args}", mkvmerge, args);
 
-        var exitCode = await RunProcessAsync(mkvmerge, args, config, ct);
+        var (exitCode, _) = await RunProcessAsync(mkvmerge, args, config, ct);
         if (exitCode != 0 && exitCode != 1) // mkvmerge returns 1 for warnings
             throw new InvalidOperationException($"mkvmerge failed with exit code {exitCode}");
 
@@ -485,13 +485,22 @@ public class CommercialProcessor
     {
         _logger?.LogDebug("Running: {FFmpeg} {Args}", ffmpegPath, args);
 
-        var exitCode = await RunProcessAsync(ffmpegPath, args, config, ct);
+        var (exitCode, stderr) = await RunProcessAsync(ffmpegPath, args, config, ct);
 
         if (exitCode != 0)
-            throw new InvalidOperationException($"FFmpeg failed with exit code {exitCode}");
+        {
+            if (!string.IsNullOrEmpty(stderr))
+                _logger?.LogError("FFmpeg stderr:\n{Stderr}", stderr);
+            // Include the last meaningful line of stderr in the exception so it appears
+            // in the console output even without --verbose.
+            string detail = string.IsNullOrEmpty(stderr)
+                ? ""
+                : ": " + (stderr.Trim().Split('\n').LastOrDefault(l => !string.IsNullOrWhiteSpace(l)) ?? "");
+            throw new InvalidOperationException($"FFmpeg failed with exit code {exitCode}{detail}");
+        }
     }
 
-    private async Task<int> RunProcessAsync(
+    private async Task<(int exitCode, string stderr)> RunProcessAsync(
         string executable, string args, ProcessingConfig config, CancellationToken ct)
     {
         var psi = new ProcessStartInfo
@@ -559,10 +568,7 @@ public class CommercialProcessor
         string stderr = await stderrTask;
         await stdoutDrain;
 
-        if (process.ExitCode != 0 && !string.IsNullOrEmpty(stderr))
-            _logger?.LogDebug("Process stderr: {Stderr}", stderr);
-
-        return process.ExitCode;
+        return (process.ExitCode, stderr);
     }
 
     private string? FindMkvmerge(ProcessingConfig config)

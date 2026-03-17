@@ -64,10 +64,18 @@ public class DetectionPipeline
             "Media: {Width}x{Height} @ {Fps}fps, duration {Duration}",
             mediaInfo.Width, mediaInfo.Height, mediaInfo.FrameRate, mediaInfo.Duration);
 
-        // ── Phase 1b: PSIP program schedule (ATSC TS files only) ─────────────
-        // Read STT + EIT directly from the TS stream to derive exact program
-        // boundaries. Overrides skip_start/skip_end from the ini when successful;
-        // falls back to ini values silently if no PSIP tables are found.
+        // ── Phase 1b: Program boundary detection ─────────────────────────────
+        // Attempt to derive exact program start/end from metadata embedded in the
+        // recording itself, avoiding reliance on potentially-drifted external EPG.
+        //
+        // Strategy (in priority order):
+        //   1. PSIP (STT + EIT, PID 0x1FFB) — second-precision, full-multiplex TS only.
+        //      Not available in Emby/HDHomeRun recordings (PSIP PID is stripped).
+        //   2. XDS (EIA-608 Class 1, video track user_data) — minute-precision, survives
+        //      DVR recording since Emby preserves the full video track.
+        //   3. ini skip_start_seconds / skip_end_seconds — manual fallback.
+        bool boundaryOverrideApplied = false;
+
         if (config.PsipEnabled)
         {
             var psip = PsipReader.Read(inputPath, mediaInfo.Duration, _logger);
@@ -77,8 +85,23 @@ public class DetectionPipeline
                     "PSIP override: skip-start {Old:F0}s → {New:F0}s, skip-end {OldE:F0}s → {NewE:F0}s",
                     config.SkipStartSeconds, psip.SkipStartSeconds,
                     config.SkipEndSeconds, psip.GetSkipEndSeconds(mediaInfo.Duration));
-                config.SkipStartSeconds = psip.SkipStartSeconds;
-                config.SkipEndSeconds   = psip.GetSkipEndSeconds(mediaInfo.Duration);
+                config.SkipStartSeconds  = psip.SkipStartSeconds;
+                config.SkipEndSeconds    = psip.GetSkipEndSeconds(mediaInfo.Duration);
+                boundaryOverrideApplied  = true;
+            }
+        }
+
+        if (!boundaryOverrideApplied && config.XdsEnabled)
+        {
+            var xds = XdsReader.Read(inputPath, mediaInfo.Duration, _logger);
+            if (xds.IsComplete)
+            {
+                _logger?.LogInformation(
+                    "XDS override: skip-start {Old:F0}s → {New:F0}s, skip-end {OldE:F0}s → {NewE:F0}s",
+                    config.SkipStartSeconds, xds.SkipStartSeconds,
+                    config.SkipEndSeconds, xds.GetSkipEndSeconds(mediaInfo.Duration));
+                config.SkipStartSeconds = xds.SkipStartSeconds;
+                config.SkipEndSeconds   = xds.GetSkipEndSeconds(mediaInfo.Duration);
             }
         }
 

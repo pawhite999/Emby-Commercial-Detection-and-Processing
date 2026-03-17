@@ -506,14 +506,20 @@ public class LogoDetector : ISignalDetector
         }
 
         // ── Phase 1: Learning ─────────────────────────────────────────────────
-        double learnSecs = Math.Min(config.LogoLearnDurationSeconds, mediaInfo.Duration.TotalSeconds);
-        _logger?.LogDebug("LogoDetector: learning phase ({LearnSecs:F0}s) — probing {N} corners + {B} bands",
-            learnSecs, Corners.Length, TickerBands.Length);
+        // Start learning AFTER skip_start_seconds so the reference frame is captured
+        // from actual program content (with the network logo visible), not from DVR
+        // pre-padding where the logo may be absent, which would invert the SSIM signal.
+        double learnStart = Math.Min(config.SkipStartSeconds, mediaInfo.Duration.TotalSeconds * 0.5);
+        double learnSecs  = Math.Min(config.LogoLearnDurationSeconds,
+            mediaInfo.Duration.TotalSeconds - learnStart);
+        _logger?.LogDebug("LogoDetector: learning phase {Start:F0}s–{End:F0}s — probing {N} corners + {B} bands",
+            learnStart, learnStart + learnSecs, Corners.Length, TickerBands.Length);
 
         // Probe corners and bands in parallel over the learning window
         var learnTasks = Corners
             .Concat(TickerBands)
-            .Select(r => MeasureActivityAsync(ffmpegPath, mediaInfo.FilePath, r.Crop, r.Name, learnSecs, config.LogoSceneThreshold, cancellationToken))
+            .Select(r => MeasureActivityAsync(ffmpegPath, mediaInfo.FilePath, r.Crop, r.Name,
+                learnStart, learnSecs, config.LogoSceneThreshold, cancellationToken))
             .ToArray();
 
         var learnResults = await Task.WhenAll(learnTasks);
@@ -579,8 +585,9 @@ public class LogoDetector : ISignalDetector
             return Array.Empty<(TimeSpan, TimeSpan, double)>();
         }
 
-        // Extract reference frames for SSIM comparison (at learnSecs/2, reliably program content)
-        double refTime = learnSecs / 2.0;
+        // Extract reference frames for SSIM comparison from the middle of the learn window,
+        // which is now offset past skip_start_seconds into actual program content.
+        double refTime = learnStart + learnSecs / 2.0;
         var refTasks = activeCorners
             .Select(c => ExtractReferenceFrameAsync(ffmpegPath, mediaInfo.FilePath, c.Crop, c.Name, refTime, cancellationToken))
             .ToArray();
@@ -641,11 +648,13 @@ public class LogoDetector : ISignalDetector
     /// </summary>
     private async Task<(string Name, double EventsPerSec)> MeasureActivityAsync(
         string ffmpegPath, string filePath, string crop, string name,
-        double learnSecs, double sceneThreshold, CancellationToken ct)
+        double learnStart, double learnSecs, double sceneThreshold, CancellationToken ct)
     {
         string thresh = sceneThreshold.ToString("F2", CultureInfo.InvariantCulture);
         string filter = $"{crop},select='gt(scene,{thresh})',showinfo";
-        string args   = $"-i \"{filePath}\" -t {learnSecs.ToString(CultureInfo.InvariantCulture)}" +
+        // -ss before -i for fast keyframe seek to learnStart, then -t limits duration
+        string args   = $"-ss {learnStart.ToString(CultureInfo.InvariantCulture)}" +
+                        $" -i \"{filePath}\" -t {learnSecs.ToString(CultureInfo.InvariantCulture)}" +
                         $" -vf \"{filter}\" -vsync vfr -an -f null -";
 
         string stderr = await DetectorHelpers.RunFFmpegForStderrAsync(ffmpegPath, args, ct);

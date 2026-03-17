@@ -65,6 +65,9 @@ public static class DetectionIniMapper
         // [Psip]
         config.PsipEnabled = ini.GetBool("Psip", "enabled", config.PsipEnabled);
 
+        // [Xds]
+        config.XdsEnabled = ini.GetBool("Xds", "enabled", config.XdsEnabled);
+
         // [Output]
         var formatStrings = ini.GetStringArray("Output", "formats");
         if (formatStrings.Length > 0)

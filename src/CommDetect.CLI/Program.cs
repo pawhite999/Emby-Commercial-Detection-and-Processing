@@ -48,10 +48,11 @@ public class Program
             "Output format(s): edl, comskiptxt, mkvchapters, json, ffmetadata");
         var ffmpegOpt = new Option<string?>("--ffmpeg-path", "Path to FFmpeg/FFprobe directory");
         var verboseOpt = new Option<bool>("--verbose", "Enable verbose logging");
+        var forceOpt   = new Option<bool>("--force", "Delete existing output files before analyzing");
 
         var cmd = new Command("process", "Analyze a media file for commercials")
         {
-            inputArg, configOpt, processConfigOpt, outputOpt, presetOpt, formatOpt, ffmpegOpt, verboseOpt
+            inputArg, configOpt, processConfigOpt, outputOpt, presetOpt, formatOpt, ffmpegOpt, verboseOpt, forceOpt
         };
 
         cmd.SetHandler(async (InvocationContext ctx) =>
@@ -63,6 +64,7 @@ public class Program
             var formats         = ctx.ParseResult.GetValueForOption(formatOpt);
             var ffmpegPath      = ctx.ParseResult.GetValueForOption(ffmpegOpt);
             var verbose         = ctx.ParseResult.GetValueForOption(verboseOpt);
+            var force           = ctx.ParseResult.GetValueForOption(forceOpt);
 
             if (!input!.Exists)
             {
@@ -75,7 +77,23 @@ public class Program
             if (formats != null && formats.Length > 0)
                 config.OutputFormats = new List<OutputFormat>(formats);
 
+            if (force)
+            {
+                string[] outputExts = { ".edl", ".txt", ".xml", ".json", ".ffmetadata" };
+                foreach (var ext in outputExts)
+                {
+                    string candidate = Path.ChangeExtension(input.FullName, ext);
+                    if (File.Exists(candidate))
+                    {
+                        File.Delete(candidate);
+                        Console.WriteLine($"Deleted: {Path.GetFileName(candidate)}");
+                    }
+                }
+            }
+
             var processConfig = LoadProcessingConfig(processConfigFile);
+            if (force)
+                processConfig.OverwriteExisting = true;
 
             var services = BuildServices(ffmpegPath, verbose);
             var pipeline = services.GetRequiredService<DetectionPipeline>();
@@ -93,6 +111,28 @@ public class Program
             {
                 Console.WriteLine($"CommDetect v1.0.0 — Analyzing: {input.Name}");
                 Console.WriteLine($"Preset: {preset} | Formats: {string.Join(", ", config.OutputFormats)}");
+
+                // EPG lookup — override skip_start/skip_end from Emby recording padding
+                if (!string.IsNullOrEmpty(config.EmbyServerUrl) && !string.IsNullOrEmpty(config.EmbyApiKey))
+                {
+                    var embyLogger = services.GetRequiredService<ILoggerFactory>().CreateLogger("Emby");
+                    using var embyClient = new EmbyApiClient(
+                        config.EmbyServerUrl, config.EmbyApiKey, embyLogger);
+                    var recording = await embyClient.GetRecordingByFilenameAsync(
+                        input.Name, input.FullName, ctx.GetCancellationToken());
+                    if (recording != null)
+                    {
+                        if (recording.PrePaddingSeconds > 0)
+                            config.SkipStartSeconds = Math.Max(config.SkipStartSeconds, recording.PrePaddingSeconds);
+                        if (recording.PostPaddingSeconds > 0)
+                            config.SkipEndSeconds = Math.Max(config.SkipEndSeconds, recording.PostPaddingSeconds);
+                        Console.WriteLine(
+                            $"EPG: {recording.StartDate:HH:mm}–{recording.EndDate:HH:mm} UTC | " +
+                            $"pre={recording.PrePaddingSeconds}s post={recording.PostPaddingSeconds}s");
+                    }
+                }
+
+                Console.WriteLine($"Config: {FormatConfigSummary(config)}");
                 if (processConfig.Mode != ProcessingMode.Skip)
                     Console.WriteLine($"Post-processing: {processConfig.Mode} → {processConfig.ContainerFormat}");
                 Console.WriteLine();
@@ -244,6 +284,7 @@ public class Program
             Console.WriteLine($"Formats: {string.Join(", ", watchConfig.OutputFormats)}");
             Console.WriteLine($"Concurrency: {watchConfig.MaxConcurrentJobs} | " +
                               $"Stability delay: {watchConfig.StabilityDelaySeconds}s");
+            Console.WriteLine($"Config: {FormatConfigSummary(detectionConfig)}");
             Console.WriteLine();
 
             using var watchService = new WatchService(pipeline, detectionConfig, watchConfig, logger);
@@ -405,6 +446,7 @@ public class Program
                 Console.WriteLine($"  {dir}");
             Console.WriteLine($"Stability delay: {watchConfig.StabilityDelaySeconds}s | " +
                               $"Formats: {string.Join(", ", watchConfig.OutputFormats)}");
+            Console.WriteLine($"Config: {FormatConfigSummary(detectionConfig)}");
             Console.WriteLine();
 
             using var watchService = new WatchService(
@@ -649,10 +691,24 @@ public class Program
         yield return Path.Combine(Environment.CurrentDirectory, filename);
         yield return Path.Combine(Environment.CurrentDirectory, "config", filename);
 
-        // Next to the executable
-        string exeDir = AppContext.BaseDirectory;
-        yield return Path.Combine(exeDir, filename);
-        yield return Path.Combine(exeDir, "config", filename);
+        // Next to the actual executable (works for self-contained single-file builds)
+        string? exePath = Environment.ProcessPath;
+        if (!string.IsNullOrEmpty(exePath))
+        {
+            string exeDir = Path.GetDirectoryName(exePath) ?? "";
+            if (!string.IsNullOrEmpty(exeDir))
+            {
+                yield return Path.Combine(exeDir, filename);
+                yield return Path.Combine(exeDir, "config", filename);
+            }
+        }
+
+        // System-wide config directory
+        yield return Path.Combine("/etc/commdetect", filename);
+
+        // AppContext base (fallback — may be temp dir for single-file builds)
+        yield return Path.Combine(AppContext.BaseDirectory, filename);
+        yield return Path.Combine(AppContext.BaseDirectory, "config", filename);
     }
 
     private static ServiceProvider BuildServices(
@@ -694,6 +750,25 @@ public class Program
         services.AddSingleton<EmbyIntegration>();
 
         return services.BuildServiceProvider();
+    }
+
+    private static string FormatConfigSummary(DetectionConfig config)
+    {
+        var logo = config.EnableLogoDetection
+            ? $"Lo={config.LogoAbsenceWeight:F2}[ssim={config.LogoSsimThreshold:F2}]"
+            : "Lo=off";
+
+        var summary = $"threshold={config.CommercialThreshold:F2} | " +
+                      $"BF={config.BlackFrameWeight:F2} SC={config.SceneChangeWeight:F2} " +
+                      $"Si={config.SilenceWeight:F2} {logo} AR={config.AspectRatioWeight:F2} | " +
+                      $"comm={config.MinCommercialDurationSeconds:F0}–{config.MaxCommercialDurationSeconds:F0}s";
+
+        if (config.SkipStartSeconds > 0)
+            summary += $" skip-start={config.SkipStartSeconds:F0}s";
+        if (config.SkipEndSeconds > 0)
+            summary += $" skip-end={config.SkipEndSeconds:F0}s";
+
+        return summary;
     }
 
     private static string SerializeConfig<T>(T config) =>
