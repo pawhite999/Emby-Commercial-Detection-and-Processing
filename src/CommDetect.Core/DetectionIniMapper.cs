@@ -62,6 +62,9 @@ public static class DetectionIniMapper
         config.EmbyServerUrl = ini.GetString("Emby", "server_url", config.EmbyServerUrl) ?? "";
         config.EmbyApiKey    = ini.GetString("Emby", "api_key",    config.EmbyApiKey)    ?? "";
 
+        // [Psip]
+        config.PsipEnabled = ini.GetBool("Psip", "enabled", config.PsipEnabled);
+
         // [Output]
         var formatStrings = ini.GetStringArray("Output", "formats");
         if (formatStrings.Length > 0)

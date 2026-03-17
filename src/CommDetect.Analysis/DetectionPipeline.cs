@@ -64,6 +64,24 @@ public class DetectionPipeline
             "Media: {Width}x{Height} @ {Fps}fps, duration {Duration}",
             mediaInfo.Width, mediaInfo.Height, mediaInfo.FrameRate, mediaInfo.Duration);
 
+        // ── Phase 1b: PSIP program schedule (ATSC TS files only) ─────────────
+        // Read STT + EIT directly from the TS stream to derive exact program
+        // boundaries. Overrides skip_start/skip_end from the ini when successful;
+        // falls back to ini values silently if no PSIP tables are found.
+        if (config.PsipEnabled)
+        {
+            var psip = PsipReader.Read(inputPath, mediaInfo.Duration, _logger);
+            if (psip.IsComplete)
+            {
+                _logger?.LogInformation(
+                    "PSIP override: skip-start {Old:F0}s → {New:F0}s, skip-end {OldE:F0}s → {NewE:F0}s",
+                    config.SkipStartSeconds, psip.SkipStartSeconds,
+                    config.SkipEndSeconds, psip.GetSkipEndSeconds(mediaInfo.Duration));
+                config.SkipStartSeconds = psip.SkipStartSeconds;
+                config.SkipEndSeconds   = psip.GetSkipEndSeconds(mediaInfo.Duration);
+            }
+        }
+
         // ── Phase 2: Extract & Analyze ───────────────────────
         progress?.ReportPhase("Analyzing media");
 
@@ -108,6 +126,44 @@ public class DetectionPipeline
 
         var analysisResult = _classifier.Classify(mediaInfo, signals, config);
         analysisResult.AnalysisStartedUtc = DateTime.UtcNow - stopwatch.Elapsed;
+
+        // Reclassify any commercial segment that starts within the skip window as Program.
+        if (config.SkipStartSeconds > 0)
+        {
+            var skipThreshold = TimeSpan.FromSeconds(config.SkipStartSeconds);
+            int skipped = 0;
+            foreach (var seg in analysisResult.Segments)
+            {
+                if (seg.Type == SegmentType.Commercial && seg.Start < skipThreshold)
+                {
+                    seg.Type = SegmentType.Program;
+                    skipped++;
+                }
+            }
+            if (skipped > 0)
+                _logger?.LogInformation(
+                    "SkipStart: reclassified {Count} commercial segment(s) within first {Secs:F0}s as Program",
+                    skipped, config.SkipStartSeconds);
+        }
+
+        // Reclassify any commercial segment that ends within the skip-end window as Program.
+        if (config.SkipEndSeconds > 0)
+        {
+            var skipThreshold = mediaInfo.Duration - TimeSpan.FromSeconds(config.SkipEndSeconds);
+            int skipped = 0;
+            foreach (var seg in analysisResult.Segments)
+            {
+                if (seg.Type == SegmentType.Commercial && seg.End > skipThreshold)
+                {
+                    seg.Type = SegmentType.Program;
+                    skipped++;
+                }
+            }
+            if (skipped > 0)
+                _logger?.LogInformation(
+                    "SkipEnd: reclassified {Count} commercial segment(s) within last {Secs:F0}s as Program",
+                    skipped, config.SkipEndSeconds);
+        }
 
         var commercialSegments = analysisResult.Segments
             .Where(s => s.Type == SegmentType.Commercial)

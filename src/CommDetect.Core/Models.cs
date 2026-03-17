@@ -156,6 +156,13 @@ public class DetectionConfig
     public string EmbyServerUrl { get; set; } = "";
     public string EmbyApiKey    { get; set; } = "";
 
+    // ATSC PSIP auto-detection
+    // When enabled, CommDetect reads the STT and EIT tables embedded in the TS stream
+    // to determine exact program boundaries — no external EPG source required.
+    // Overrides skip_start_seconds/skip_end_seconds when successful.
+    // Falls back to ini values if the file has no PSIP data (e.g. non-TS sources).
+    public bool PsipEnabled { get; set; } = true;
+
     // Output
     public List<OutputFormat> OutputFormats { get; set; } = new() { OutputFormat.Edl };
 
