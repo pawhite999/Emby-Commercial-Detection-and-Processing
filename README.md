@@ -96,27 +96,104 @@ MEDIA_DIR=/mnt/media OUTPUT_DIR=./output docker-compose -f docker/docker-compose
 | Linux x64 (Debian/Ubuntu/Fedora/etc.) | ✅ Fully supported | |
 | Linux ARM64 | ✅ Fully supported | Raspberry Pi 4+, etc. |
 | Alpine Linux (musl) | ✅ Fully supported | Docker-friendly |
-| FreeBSD x64 | ⚙️ Build from source | TrueNAS CORE, FreeBSD 13+ |
+| FreeBSD x64 | ✅ Pre-built binary | TrueNAS CORE, FreeBSD 13+ — requires Linux compat layer |
+
+**TrueNAS SCALE** is Linux-based — use the `linux-x64` binary instead.
 
 ### FreeBSD / TrueNAS CORE
 
-The .NET SDK cannot cross-compile a self-contained FreeBSD binary from Linux, so no pre-built binary is provided. Build natively on the FreeBSD machine:
+CommDetect ships as a `linux-x64` self-contained binary (`commdetect-freebsd13`) that runs under FreeBSD's Linux compatibility layer. No .NET installation is required on the target machine.
 
-```bash
-# Install prerequisites
-pkg install dotnet-sdk-8.0 ffmpeg git
+#### Quick install (inside your jail)
 
-# Clone and build
-git clone https://github.com/pawhite999/Emby-Commercial-Detection-and-Processing.git
-cd Emby-Commercial-Detection-and-Processing
-dotnet publish src/CommDetect.CLI/CommDetect.CLI.csproj \
-    -c Release -r freebsd-x64 --self-contained true \
-    -p:PublishSingleFile=true -o ./out
-cp out/commdetect /usr/local/bin/commdetect
-chmod +x /usr/local/bin/commdetect
+```sh
+fetch https://github.com/pawhite999/Emby-Commercial-Detection-and-Processing/releases/latest/download/freebsd-install.sh
+chmod +x freebsd-install.sh
+./freebsd-install.sh
 ```
 
-**TrueNAS SCALE** is Linux-based — use the `linux-x64` binary instead.
+The script handles all prerequisites, directory setup, and configuration prompts. See below for what it does, or follow the manual steps if you prefer.
+
+#### Host system prerequisites (run on the TrueNAS/FreeBSD host, not in the jail)
+
+```sh
+# Load the Linux compatibility kernel module
+kldload linux64
+
+# Make it permanent across reboots
+sysrc linux_enable="YES"
+```
+
+Then add the linprocfs and linsysfs mounts to your jail (required for .NET's CoreCLR):
+
+**This step needs to be completed in the TrueNAS shell, but it will only be successful after you have installed linux_base-rl9 (with pkg install linux_base-rl9) in your jail.  
+
+```sh
+iocage fstab -a <jailname> "linprocfs /compat/linux/proc linprocfs rw 0 0"
+iocage fstab -a <jailname> "linsysfs /compat/linux/sys linsysfs rw 0 0"
+iocage restart <jailname>
+```
+
+#### Inside the jail
+
+```sh
+# Install Linux compat base and dependencies
+# Note: linux_base-rl9 (Rocky Linux 9) is required — linux_base-c7 is too old for .NET
+pkg install linux_base-rl9 ffmpeg mkvtoolnix
+
+# Download and install the binary
+fetch https://github.com/pawhite999/Emby-Commercial-Detection-and-Processing/releases/latest/download/commdetect-freebsd13
+install -m 755 commdetect-freebsd13 /usr/local/bin/commdetect
+
+# Download config files
+fetch -o /usr/local/bin/commdetect.ini \
+    https://raw.githubusercontent.com/pawhite999/Emby-Commercial-Detection-and-Processing/main/config/commdetect.ini
+fetch -o /usr/local/bin/comprocess.ini \
+    https://raw.githubusercontent.com/pawhite999/Emby-Commercial-Detection-and-Processing/main/config/comprocess.ini
+
+# Create required directories
+mkdir -p /var/log/commdetect/log /var/log/commdetect/edl
+mkdir -p /var/tmp/commdetect
+chmod 777 /var/log/commdetect/log /var/log/commdetect/edl /var/tmp/commdetect
+```
+
+#### Configuration
+
+Edit `/usr/local/bin/commdetect.ini` to set:
+
+```ini
+[Logging]
+log_dir=/var/log/commdetect/log
+edl_dir=/var/log/commdetect/edl
+
+[Detection]
+# Set these to match your DVR pre/post-padding (in seconds)
+# If recordings cut into the beginning or end of your show, adjust these values
+skip_start_seconds=120
+skip_end_seconds=120
+```
+
+Edit `/usr/local/bin/comprocess.ini` to set:
+
+```ini
+# Persistent temp directory for commercial cutting
+temp_dir=/var/tmp/commdetect
+```
+
+#### Emby post-processor setup
+
+In Emby: **Dashboard → Live TV → Recording Post Processing**
+
+| Field | Value |
+|-------|-------|
+| Post-processing application | `/usr/local/bin/commdetect` |
+| Arguments | `process "{path}"` |
+
+#### Test
+
+```sh
+commdetect process "/path/to/recording.ts" --verbose
+```
 
 ## Architecture
 

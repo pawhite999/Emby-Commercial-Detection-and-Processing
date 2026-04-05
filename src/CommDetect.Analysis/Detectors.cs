@@ -181,7 +181,7 @@ public class BlackFrameDetector : ISignalDetector
     private readonly ILogger<BlackFrameDetector>? _logger;
 
     private static readonly Regex BlackdetectLine = new(
-        @"black_start:(\d+(?:\.\d+)?)\s+black_end:(\d+(?:\.\d+)?)",
+        @"black_start[:=](\d+(?:\.\d+)?)\s+black_end[:=](\d+(?:\.\d+)?)",
         RegexOptions.Compiled);
 
     public BlackFrameDetector(IFFmpegLocator ffmpegLocator,
@@ -228,6 +228,145 @@ public class BlackFrameDetector : ISignalDetector
         _logger?.LogInformation("BlackFrameDetector: {Count} black segment(s) in {File}",
             segments.Count, System.IO.Path.GetFileName(mediaInfo.FilePath));
 
+        if (config.BfUseClustering)
+        {
+            // Filter out BF segments shorter than min_count frames.  Short flashes
+            // (single-frame or near-single-frame blacks from scene transitions or
+            // broadcast glitches) can bridge otherwise-separate real break clusters
+            // when cluster_max_gap is large.  Using the actual video frame rate gives
+            // an accurate minimum duration; fall back to 30fps if unknown.
+            double fps        = mediaInfo.FrameRate > 0 ? mediaInfo.FrameRate : 30.0;
+            double minSegSecs = config.BfMinCount / fps;
+            segments = segments
+                .Where(s => (s.Item2 - s.Item1).TotalSeconds >= minSegSecs)
+                .ToList();
+
+            // Cluster dense BF events into pod-spanning segments.  Each BF segment's
+            // start time is treated as a point event; ClusterIntoSegments groups
+            // events separated by ≤BfClusterMaxGapSeconds into a single span.
+            // Isolated single BFs (program transitions) are discarded by the
+            // minEventCount filter, leaving only commercial-pod clusters.
+            var timestamps = segments.Select(s => s.Item1).ToList();
+            var clusters   = DetectorHelpers.ClusterIntoSegments(timestamps,
+                config.BfClusterMaxGapSeconds,
+                config.BfClusterMinDurationSeconds,
+                config.BfClusterMinEventCount);
+
+            // ClusterIntoSegments uses start-time spans, so an isolated single-event
+            // cluster always has span=0 and fails minDuration regardless of the BF
+            // segment's actual length.  When cluster_min_events=1, pick up any BF
+            // segment that (a) is genuinely isolated (no neighbour within max_gap)
+            // and (b) meets minDuration on its own.
+            if (config.BfClusterMinEventCount <= 1)
+            {
+                for (int i = 0; i < segments.Count; i++)
+                {
+                    double dur      = (segments[i].Item2 - segments[i].Item1).TotalSeconds;
+                    if (dur < config.BfClusterMinDurationSeconds) continue;
+                    double gapPrev  = i > 0
+                        ? (segments[i].Item1 - segments[i - 1].Item1).TotalSeconds
+                        : double.MaxValue;
+                    double gapNext  = i < segments.Count - 1
+                        ? (segments[i + 1].Item1 - segments[i].Item1).TotalSeconds
+                        : double.MaxValue;
+                    if (gapPrev > config.BfClusterMaxGapSeconds &&
+                        gapNext  > config.BfClusterMaxGapSeconds)
+                    {
+                        clusters.Add((segments[i].Item1, segments[i].Item2));
+                        _logger?.LogDebug("  BF isolated segment included: {S:F1}s → {E:F1}s (dur={D:F2}s)",
+                            segments[i].Item1.TotalSeconds, segments[i].Item2.TotalSeconds, dur);
+                    }
+                }
+                clusters.Sort((a, b) => a.Item1.CompareTo(b.Item1));
+            }
+
+            _logger?.LogInformation(
+                "BlackFrameDetector: {Count} BF cluster(s) after clustering (gap≤{Gap}s, min={Min}s, events≥{Evt})",
+                clusters.Count, config.BfClusterMaxGapSeconds,
+                config.BfClusterMinDurationSeconds, config.BfClusterMinEventCount);
+            foreach (var (s, e) in clusters)
+                _logger?.LogDebug("  BF cluster: {S:F1}s → {E:F1}s", s.TotalSeconds, e.TotalSeconds);
+            return DetectorHelpers.BuildWindowedScores(clusters, mediaInfo.Duration, config.WindowSizeSeconds);
+        }
+
+        return DetectorHelpers.BuildWindowedScores(segments, mediaInfo.Duration, config.WindowSizeSeconds);
+    }
+}
+
+// ── LetterboxDetector ────────────────────────────────────────────────────────
+
+/// <summary>
+/// Detects commercial letterboxing by looking for sustained darkness in the
+/// center-top strip of the frame.
+///
+/// Pillarboxed channels (Great TV, Story TV) show 4:3 content with dark side
+/// bars. During commercial breaks they add top/bottom letterbox bars as well,
+/// turning all four borders black. Sampling the center-top strip (center 50%
+/// of the top 1/12 of the frame) avoids the always-dark side pillarbox bars
+/// and only fires when the letterbox bars appear.
+///
+/// A minimum darkness duration of 5 s filters out single-frame scene cuts
+/// while catching every commercial break (breaks are typically ≥ 30 s).
+/// </summary>
+public class LetterboxDetector : ISignalDetector
+{
+    private readonly IFFmpegLocator _ffmpegLocator;
+    private readonly ILogger<LetterboxDetector>? _logger;
+
+    private static readonly Regex BlackdetectLine = new(
+        @"black_start[:=](\d+(?:\.\d+)?)\s+black_end[:=](\d+(?:\.\d+)?)",
+        RegexOptions.Compiled);
+
+    public LetterboxDetector(IFFmpegLocator ffmpegLocator,
+        ILogger<LetterboxDetector>? logger = null)
+    {
+        _ffmpegLocator = ffmpegLocator;
+        _logger = logger;
+    }
+
+    public string Name          => "Letterbox";
+    public SignalType SignalType => SignalType.Letterbox;
+    public bool RequiresVideo   => false;
+    public bool RequiresAudio   => false;
+
+    public async Task<IReadOnlyList<(TimeSpan start, TimeSpan end, double score)>> AnalyzeAsync(
+        IAsyncEnumerable<VideoFrame> frames,
+        IAsyncEnumerable<AudioWindow> audio,
+        MediaInfo mediaInfo,
+        DetectionConfig config,
+        CancellationToken cancellationToken)
+    {
+        if (!config.EnableLetterboxDetection)
+            return Array.Empty<(TimeSpan, TimeSpan, double)>();
+
+        string ffmpegPath = _ffmpegLocator.FindFFmpeg()
+            ?? throw new InvalidOperationException("FFmpeg not found.");
+
+        // Crop: center 50% of frame width, top 1/12 of frame height.
+        // x = iw/4, y = 0, w = iw/2, h = ih/12
+        // This strip is inside the active 4:3 picture horizontally, so it is
+        // dark only when the broadcaster has added a top letterbox bar.
+        double minDur  = config.LetterboxMinDuration;
+        double picTh   = config.LetterboxPicThreshold;
+        string filter  = $"crop=iw/2:ih/12:iw/4:0,blackdetect=d={minDur:F2}:pix_th=0.10:pic_th={picTh:F2}";
+        string args    = $"-i \"{mediaInfo.FilePath}\" -vf \"{filter}\" -an -f null -";
+
+        _logger?.LogDebug("LetterboxDetector: {FFmpeg} {Args}", ffmpegPath, args);
+
+        string stderr = await DetectorHelpers.RunFFmpegForStderrAsync(ffmpegPath, args, cancellationToken);
+
+        var segments = new List<(TimeSpan, TimeSpan)>();
+        foreach (Match m in BlackdetectLine.Matches(stderr))
+        {
+            double start = DetectorHelpers.ParseDouble(m.Groups[1].Value);
+            double end   = DetectorHelpers.ParseDouble(m.Groups[2].Value);
+            segments.Add((TimeSpan.FromSeconds(start), TimeSpan.FromSeconds(end)));
+            _logger?.LogDebug("  letterbox: {Start:F3}s → {End:F3}s", start, end);
+        }
+
+        _logger?.LogInformation("LetterboxDetector: {Count} segment(s) in {File}",
+            segments.Count, System.IO.Path.GetFileName(mediaInfo.FilePath));
+
         return DetectorHelpers.BuildWindowedScores(segments, mediaInfo.Duration, config.WindowSizeSeconds);
     }
 }
@@ -255,11 +394,11 @@ public class SilenceDetector : ISignalDetector
     private readonly ILogger<SilenceDetector>? _logger;
 
     private static readonly Regex SilenceStartRx = new(
-        @"silence_start:\s*(\d+(?:\.\d+)?)",
+        @"silence_start[:=]\s*(\d+(?:\.\d+)?)",
         RegexOptions.Compiled);
 
     private static readonly Regex SilenceEndRx = new(
-        @"silence_end:\s*(\d+(?:\.\d+)?)",
+        @"silence_end[:=]\s*(\d+(?:\.\d+)?)",
         RegexOptions.Compiled);
 
     public SilenceDetector(IFFmpegLocator ffmpegLocator,
@@ -412,7 +551,15 @@ public class SceneChangeDetector : ISignalDetector
         foreach (var (s, e) in segments)
             _logger?.LogDebug("  scene segment: {S:F1}s → {E:F1}s", s.TotalSeconds, e.TotalSeconds);
 
-        return DetectorHelpers.BuildWindowedScores(segments, mediaInfo.Duration, config.WindowSizeSeconds);
+        var scores = DetectorHelpers.BuildWindowedScores(segments, mediaInfo.Duration, config.WindowSizeSeconds);
+
+        if (config.SceneChangeInvert)
+        {
+            _logger?.LogDebug("SceneChangeDetector: inverting scores (sparse gaps → commercial)");
+            scores = scores.Select(w => (w.start, w.end, 1.0 - w.score)).ToList();
+        }
+
+        return scores;
     }
 }
 
@@ -453,14 +600,25 @@ public class LogoDetector : ISignalDetector
     private readonly IFFmpegLocator _ffmpegLocator;
     private readonly ILogger<LogoDetector>? _logger;
 
-    // 10 % × 10 % corner patches
-    private static readonly (string Name, string Crop)[] Corners =
-    [
-        ("top-left",     "crop=iw/10:ih/10:0:0"),
-        ("top-right",    "crop=iw/10:ih/10:9*iw/10:0"),
-        ("bottom-left",  "crop=iw/10:ih/10:0:9*ih/10"),
-        ("bottom-right", "crop=iw/10:ih/10:9*iw/10:9*ih/10"),
-    ];
+    // Corner crop patches — size and inset are configurable via LogoCropSize / LogoXInset / LogoYInset.
+    // logo_x_inset shifts left/right crops horizontally (e.g. past pillarbox bars).
+    // logo_y_inset shifts top/bottom crops vertically (e.g. for logos above the frame bottom).
+    // Together they allow the four crops to be centred on a logo at any interior position.
+    private static (string Name, string Crop)[] BuildCorners(double cropSize, double xInset, double yInset)
+    {
+        string w  = FormattableString.Invariant($"iw*{cropSize:F4}");
+        string h  = FormattableString.Invariant($"ih*{cropSize:F4}");
+        string xl = FormattableString.Invariant($"iw*{xInset:F4}");
+        string xr = FormattableString.Invariant($"iw*{1.0 - cropSize - xInset:F4}");
+        string yt = FormattableString.Invariant($"ih*{yInset:F4}");
+        string yb = FormattableString.Invariant($"ih*{1.0 - cropSize - yInset:F4}");
+        return [
+            ("top-left",     $"crop={w}:{h}:{xl}:{yt}"),
+            ("top-right",    $"crop={w}:{h}:{xr}:{yt}"),
+            ("bottom-left",  $"crop={w}:{h}:{xl}:{yb}"),
+            ("bottom-right", $"crop={w}:{h}:{xr}:{yb}"),
+        ];
+    }
 
     // Full-width ticker bands (1/12 height)
     private static readonly (string Name, string Crop)[] TickerBands =
@@ -505,18 +663,28 @@ public class LogoDetector : ISignalDetector
             return Array.Empty<(TimeSpan, TimeSpan, double)>();
         }
 
+        // Build corner crop definitions using the configured crop size.
+        var corners = BuildCorners(config.LogoCropSize, config.LogoXInset, config.LogoYInset);
+
         // ── Phase 1: Learning ─────────────────────────────────────────────────
-        // Start learning AFTER skip_start_seconds so the reference frame is captured
-        // from actual program content (with the network logo visible), not from DVR
-        // pre-padding where the logo may be absent, which would invert the SSIM signal.
-        double learnStart = Math.Min(config.SkipStartSeconds, mediaInfo.Duration.TotalSeconds * 0.5);
+        // Start learning AFTER skip_start_seconds (or logo_learn_start if set) so the
+        // reference frame is captured from actual program content (with the network logo
+        // visible), not from DVR pre-padding or the first commercial break.
+        // logo_learn_start_seconds overrides skip_start_seconds for this purpose only —
+        // useful when a commercial break immediately follows the pre-show graphics:
+        //   skip_start_seconds = just past pre-show (e.g. 120s)
+        //   logo_learn_start   = past first commercial break (e.g. 720s)
+        double learnBase  = config.LogoLearnStartSeconds >= 0
+            ? config.LogoLearnStartSeconds
+            : config.SkipStartSeconds;
+        double learnStart = Math.Min(learnBase, mediaInfo.Duration.TotalSeconds * 0.5);
         double learnSecs  = Math.Min(config.LogoLearnDurationSeconds,
             mediaInfo.Duration.TotalSeconds - learnStart);
         _logger?.LogDebug("LogoDetector: learning phase {Start:F0}s–{End:F0}s — probing {N} corners + {B} bands",
-            learnStart, learnStart + learnSecs, Corners.Length, TickerBands.Length);
+            learnStart, learnStart + learnSecs, corners.Length, TickerBands.Length);
 
         // Probe corners and bands in parallel over the learning window
-        var learnTasks = Corners
+        var learnTasks = corners
             .Concat(TickerBands)
             .Select(r => MeasureActivityAsync(ffmpegPath, mediaInfo.FilePath, r.Crop, r.Name,
                 learnStart, learnSecs, config.LogoSceneThreshold, cancellationToken))
@@ -527,18 +695,18 @@ public class LogoDetector : ISignalDetector
         // Classify corners — exclude those with ticker-level activity
         var activeCorners = new List<(string Name, string Crop)>();
         var activeRates   = new List<double>();
-        for (int i = 0; i < Corners.Length; i++)
+        for (int i = 0; i < corners.Length; i++)
         {
             double eps = learnResults[i].EventsPerSec;
             bool isTicker = eps > config.LogoCornerTickerThreshold;
             _logger?.LogInformation(
                 "LogoDetector: corner {Corner} → {Eps:F2} events/s {Status}",
-                Corners[i].Name, eps,
+                corners[i].Name, eps,
                 isTicker ? "(TICKER — excluded)" : "(active)");
 
             if (!isTicker)
             {
-                activeCorners.Add(Corners[i]);
+                activeCorners.Add(corners[i]);
                 activeRates.Add(eps);
             }
         }
@@ -570,7 +738,7 @@ public class LogoDetector : ISignalDetector
         // Log ticker-band results
         for (int i = 0; i < TickerBands.Length; i++)
         {
-            double eps = learnResults[Corners.Length + i].EventsPerSec;
+            double eps = learnResults[corners.Length + i].EventsPerSec;
             if (eps > BandTickerThreshold)
                 _logger?.LogWarning(
                     "LogoDetector: {Band} has high activity ({Eps:F2} events/s) — weather/news crawl likely",
@@ -585,9 +753,12 @@ public class LogoDetector : ISignalDetector
             return Array.Empty<(TimeSpan, TimeSpan, double)>();
         }
 
-        // Extract reference frames for SSIM comparison from the middle of the learn window,
-        // which is now offset past skip_start_seconds into actual program content.
-        double refTime = learnStart + learnSecs / 2.0;
+        // Extract reference frames for SSIM comparison. By default use the midpoint of
+        // the learn window, but allow an explicit override via logo_reference_seconds
+        // for cases where the midpoint lands on a black frame or pre-show content.
+        double refTime = config.LogoReferenceSeconds >= 0
+            ? config.LogoReferenceSeconds
+            : learnStart + learnSecs / 2.0;
         var refTasks = activeCorners
             .Select(c => ExtractReferenceFrameAsync(ffmpegPath, mediaInfo.FilePath, c.Crop, c.Name, refTime, cancellationToken))
             .ToArray();
@@ -609,9 +780,8 @@ public class LogoDetector : ISignalDetector
 
         var cornerTimestamps = await Task.WhenAll(detectTasks);
 
-        // Cleanup reference files
-        foreach (var p in refPaths)
-            if (p != null) try { System.IO.File.Delete(p); } catch { /* ignore */ }
+        // Reference frames are left in /tmp for post-run inspection.
+        // (Deletion removed so logo corner crops can be reviewed when SSIM misbehaves.)
 
         // Log per-corner event counts
         for (int i = 0; i < activeCorners.Count; i++)
@@ -638,6 +808,21 @@ public class LogoDetector : ISignalDetector
             config.LogoClusterMinEventCount);
         foreach (var (s, e) in segments)
             _logger?.LogDebug("  logo-absent segment: {S:F1}s → {E:F1}s", s.TotalSeconds, e.TotalSeconds);
+
+        // Sanity check: if logo-absent covers the vast majority of the recording,
+        // the detector learned a bad reference frame or the logo is not usable as a
+        // signal for this content (e.g. competition shows with full-corner graphics).
+        // Suppress rather than poisoning the other detectors with a spurious signal.
+        const double maxAbsentFraction = 0.85;
+        double totalAbsentSecs = segments.Sum(seg => (seg.Item2 - seg.Item1).TotalSeconds);
+        double absentFraction   = totalAbsentSecs / mediaInfo.Duration.TotalSeconds;
+        if (absentFraction >= maxAbsentFraction)
+        {
+            _logger?.LogWarning(
+                "LogoDetector: logo absent for {Pct:F0}% of recording — reference frame unusable; logo signal suppressed.",
+                absentFraction * 100);
+            return Array.Empty<(TimeSpan, TimeSpan, double)>();
+        }
 
         return DetectorHelpers.BuildWindowedScores(segments, mediaInfo.Duration, config.WindowSizeSeconds);
     }
@@ -751,10 +936,15 @@ public class LogoDetector : ISignalDetector
         {
             // fps=1/5 → one frame every 5 seconds (sufficient for commercial break detection)
             // [out] + explicit -map tell FFmpeg exactly what stream to write
-            // -t {totalSeconds} hard-caps the output at the video duration;
-            //   without this, -loop 1 on the reference image causes FFmpeg to run forever
+            // -t scanEnd hard-caps the output at the video duration;
+            //   without this, -loop 1 on the reference image causes FFmpeg to run forever.
+            // Subtract 10s margin: the fps=1/5 filter can emit a frozen duplicate of the
+            // last real frame to fill the full -t window, producing spurious constant-SSIM
+            // readings at EOF. At 1 frame/5s we lose at most 2 frames — acceptable since
+            // commercial breaks never end in the final seconds of a recording.
+            double scanEnd = Math.Max(1.0, totalSeconds - 10.0);
             string filter = $"[0:v]fps=1/5,{crop}[probe];[probe][1:v]ssim=stats_file='{statsFile}'[out]";
-            string dur    = totalSeconds.ToString("F1", CultureInfo.InvariantCulture);
+            string dur    = scanEnd.ToString("F1", CultureInfo.InvariantCulture);
             string args   = $"-hide_banner -loglevel error -i \"{filePath}\" -loop 1 -i \"{refPath}\"" +
                             $" -filter_complex \"{filter}\" -map \"[out]\" -t {dur} -f null -";
 

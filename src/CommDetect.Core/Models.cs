@@ -88,6 +88,17 @@ public class DetectionConfig
     // therefore carry enough weight that their combined score exceeds the
     // CommercialThreshold even without the boundary signals firing.
     public double BlackFrameWeight { get; set; } = 0.25;
+    // When true, dense BF events are clustered into pod-spanning segments before
+    // scoring (same approach as Logo/SC detectors).  Use for shows where logo
+    // detection is disabled but commercial pods contain many BFs at regular
+    // intervals (e.g. one BF per 15s at each ad boundary within the pod).
+    // Isolated single BFs at program transitions are discarded by the cluster
+    // filter, leaving only true commercial-pod clusters with high scores.
+    public bool   BfUseClustering            { get; set; } = false;
+    public int    BfMinCount                 { get; set; } = 1;
+    public double BfClusterMaxGapSeconds     { get; set; } = 20.0;
+    public double BfClusterMinDurationSeconds{ get; set; } = 60.0;
+    public int    BfClusterMinEventCount     { get; set; } = 4;
     public double SceneChangeWeight { get; set; } = 0.35;
     public double SilenceWeight { get; set; } = 0.15;
     public double LogoAbsenceWeight { get; set; } = 0.25;
@@ -96,6 +107,24 @@ public class DetectionConfig
 
     // Detector toggles
     public double LogoLearnDurationSeconds { get; set; } = 120.0;
+
+    /// <summary>
+    /// When >= 0, overrides SkipStartSeconds as the start of the logo learning window.
+    /// Use when skip_start_seconds is set early (e.g. past pre-show graphics only) but
+    /// the first commercial break immediately follows — pushing the learning window past
+    /// that break prevents capturing a logo-absent reference frame.
+    /// Default -1 = use SkipStartSeconds (existing behavior).
+    /// </summary>
+    public double LogoLearnStartSeconds { get; set; } = -1.0;
+
+    /// <summary>
+    /// When >= 0, directly sets the timestamp (seconds) at which the logo reference
+    /// frame is extracted, overriding the default midpoint of the learn window.
+    /// Use when the default midpoint lands on a black frame or pre-show content.
+    /// Default -1 = use learnStart + learnDuration / 2 (existing behavior).
+    /// </summary>
+    public double LogoReferenceSeconds { get; set; } = -1.0;
+
     public bool EnableLogoDetection { get; set; } = true;
     public bool EnableAspectRatioDetection { get; set; } = true;
     public bool EnableAudioFingerprinting { get; set; } = false;
@@ -127,14 +156,49 @@ public class DetectionConfig
     /// </summary>
     public double LogoCornerTickerThreshold { get; set; } = 0.5;
 
+    /// <summary>
+    /// Fractional size of each corner crop (width and height as a fraction of frame size).
+    /// Default 0.10 = 10% × 10% patch. Increase to 0.15 or 0.20 for logos that sit
+    /// slightly inside the frame edge (e.g. CBS eye on Colbert at ~12.9% from bottom).
+    /// </summary>
+    public double LogoCropSize { get; set; } = 0.10;
+
+    /// <summary>
+    /// Horizontal inset for left/right corner crops as a fraction of frame width.
+    /// Default 0.0 = crop from the frame edge. Use to shift crops past pillarbox
+    /// bars or to centre them on a logo that sits away from the horizontal edges.
+    /// </summary>
+    public double LogoXInset { get; set; } = 0.0;
+
+    /// <summary>
+    /// Vertical inset for top/bottom corner crops as a fraction of frame height.
+    /// Default 0.0 = crop from the frame edge. Use when the logo sits above the
+    /// bottom edge or below the top edge — e.g. logo_y_inset=0.09 centres the
+    /// bottom crops 14% up from the bottom of the frame.
+    /// </summary>
+    public double LogoYInset { get; set; } = 0.0;
+
     // Scene change detector tuning
     // threshold: scene-score a frame must exceed to be counted as a cut (0–1).
     //   Lower = more sensitive; higher = only hard cuts.
     public double SceneChangeThreshold { get; set; } = 0.35;
+    // When true, sparse-cut regions score 1.0 and dense-cut segments score 0.0.
+    // Use for shows where commercial breaks are quiet (few cuts) and program
+    // content is action-heavy (many cuts), e.g. Saturday Night Live.
+    public bool SceneChangeInvert { get; set; } = false;
 
     // Duration constraints
     public double MinCommercialDurationSeconds { get; set; } = 30.0;
     public double MaxCommercialDurationSeconds { get; set; } = 600.0;
+
+    /// <summary>
+    /// If > 0, adjacent commercial segments separated by a program gap shorter than
+    /// this many seconds are merged into a single commercial segment.  Bridges
+    /// individual ads within a pod that scored just below threshold (e.g. sponsored
+    /// content with logo visible, or drug ads at the start of a break).
+    /// Default 0 = disabled.
+    /// </summary>
+    public double CommercialMergeGapSeconds { get; set; } = 0.0;
 
     /// <summary>
     /// Ignore commercial detections that start within the first N seconds of the recording.
@@ -172,6 +236,18 @@ public class DetectionConfig
     // Overrides skip_start_seconds/skip_end_seconds when successful.
     public bool XdsEnabled { get; set; } = true;
 
+    // Letterbox detector
+    // Detects sustained darkness in the center-top strip of the frame (above the active
+    // 4:3 picture in pillarboxed content). When all four borders go dark during commercial
+    // breaks (as on Great TV / Story TV), the center-top strip turns black for the entire
+    // break duration, giving a clean binary signal.
+    public bool   EnableLetterboxDetection { get; set; } = false;
+    public double LetterboxWeight          { get; set; } = 0.50;
+    /// <summary>Minimum continuous darkness (seconds) to count as a letterbox segment. Default 5s filters scene-cut flashes.</summary>
+    public double LetterboxMinDuration     { get; set; } = 5.0;
+    /// <summary>Fraction of pixels in the strip that must be below pix_th to count as black (0–1). Default 0.85.</summary>
+    public double LetterboxPicThreshold    { get; set; } = 0.85;
+
     // Output
     public List<OutputFormat> OutputFormats { get; set; } = new() { OutputFormat.Edl };
 
@@ -191,6 +267,22 @@ public class DetectionConfig
         EnableAudioFingerprinting = true,
         CommercialThreshold = 0.45
     };
+}
+
+/// <summary>Settings for the run-log and EDL archiving system.</summary>
+public class LoggingConfig
+{
+    /// <summary>When true, each run writes a log file and EDL copy to the archive directories.</summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>Directory where log files are written. Created automatically if missing.</summary>
+    public string LogDirectory { get; set; } = "/tmp/logs/log";
+
+    /// <summary>Directory where EDL copies are written. Created automatically if missing.</summary>
+    public string EdlDirectory { get; set; } = "/tmp/logs/edl";
+
+    /// <summary>Log and EDL files older than this many days are deleted on startup.</summary>
+    public int RetentionDays { get; set; } = 3;
 }
 
 /// <summary>Settings for the directory-watching service.</summary>

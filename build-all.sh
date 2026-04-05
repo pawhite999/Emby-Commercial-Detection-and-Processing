@@ -35,11 +35,9 @@ ALL_RIDS=(
     "linux-musl-x64"       # Alpine Linux / Docker
     "osx-x64"              # macOS Intel
     "osx-arm64"            # macOS Apple Silicon
-    # Note: freebsd-x64 cannot be cross-compiled from Linux — the .NET SDK
-    # does not ship a FreeBSD application host for Linux builds.
-    # To produce a FreeBSD binary, run this script on a FreeBSD 13+ machine
-    # with the .NET 8 SDK installed (pkg install dotnet-sdk-8.0).
 )
+# FreeBSD is built separately as a linux-x64 binary with InvariantGlobalization
+# (no freebsd-x64 NuGet packages exist). See build_freebsd() below.
 
 # ── Color output helpers ─────────────────────────────────────────────────────
 RED='\033[0;31m'

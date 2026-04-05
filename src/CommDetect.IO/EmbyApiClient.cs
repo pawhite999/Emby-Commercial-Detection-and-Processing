@@ -61,11 +61,20 @@ public class EmbyApiClient : IDisposable
         {
             var url = $"{_baseUrl}/LiveTv/Recordings" +
                       "?Fields=Path,StartDate,EndDate,PrePaddingSeconds,PostPaddingSeconds" +
-                      $"&ApiKey={_apiKey}";
+                      $"&api_key={_apiKey}";
 
             _logger?.LogDebug("Querying Emby API: {Url}", url.Replace(_apiKey, "***"));
 
-            var json = await _http.GetStringAsync(url, ct);
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            // Emby accepts either X-MediaBrowser-Token or the full MediaBrowser
+            // Authorization header. Send both for maximum version compatibility.
+            request.Headers.TryAddWithoutValidation("X-MediaBrowser-Token", _apiKey);
+            request.Headers.TryAddWithoutValidation("Authorization",
+                $"MediaBrowser Client=\"CommDetect\", Device=\"Server\", " +
+                $"DeviceId=\"commdetect-static-1\", Version=\"1.0.0\", Token=\"{_apiKey}\"");
+            using var response = await _http.SendAsync(request, ct);
+            response.EnsureSuccessStatusCode();
+            var json = await response.Content.ReadAsStringAsync(ct);
 
             using var doc = JsonDocument.Parse(json);
             if (!doc.RootElement.TryGetProperty("Items", out var items))
@@ -79,8 +88,10 @@ public class EmbyApiClient : IDisposable
                 string itemPath = item.TryGetProperty("Path", out var pathProp)
                     ? pathProp.GetString() ?? "" : "";
 
-                if (!System.IO.Path.GetFileName(itemPath)
-                        .Equals(filename, StringComparison.OrdinalIgnoreCase))
+                string itemFilename = System.IO.Path.GetFileName(itemPath);
+                _logger?.LogDebug("Emby recording: {File}", itemFilename);
+
+                if (!itemFilename.Equals(filename, StringComparison.OrdinalIgnoreCase))
                     continue;
 
                 var info = new EmbyRecordingInfo

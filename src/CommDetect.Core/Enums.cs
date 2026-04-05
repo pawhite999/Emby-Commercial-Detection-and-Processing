@@ -8,7 +8,8 @@ public enum SignalType
     Silence,
     LogoAbsence,
     AspectRatioChange,
-    AudioRepetition
+    AudioRepetition,
+    Letterbox
 }
 
 /// <summary>Classification of a media segment.</summary>

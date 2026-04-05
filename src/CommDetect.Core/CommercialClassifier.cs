@@ -46,7 +46,39 @@ public class CommercialClassifier : ICommercialClassifier
         // 5. Merge adjacent same-type windows into segments
         var segments = MergeIntoSegments(windows, mediaInfo.FrameRate);
 
-        // 6. Apply duration constraints
+        // 5b. Strip skip-zone commercials before the merge-gap step so an early BF
+        //     cluster (e.g. CBS ident at 32–82s with skip_start=90) cannot be bridged
+        //     forward into program content by commercial_merge_gap.
+        if (config.SkipStartSeconds > 0)
+        {
+            var skipStart = TimeSpan.FromSeconds(config.SkipStartSeconds);
+            foreach (var seg in segments)
+                if (seg.Type == SegmentType.Commercial && seg.Start < skipStart)
+                    seg.Type = SegmentType.Program;
+        }
+        if (config.SkipEndSeconds > 0)
+        {
+            var skipEnd = mediaInfo.Duration - TimeSpan.FromSeconds(config.SkipEndSeconds);
+            foreach (var seg in segments)
+            {
+                if (seg.Type == SegmentType.Commercial && seg.End > skipEnd)
+                {
+                    if (seg.Start >= skipEnd)
+                        seg.Type = SegmentType.Program;  // entirely in skip zone
+                    else
+                        seg.End = skipEnd;               // trim tail; duration filter handles the rest
+                }
+            }
+        }
+
+        // 6. Merge adjacent commercial segments separated by short program gaps.
+        //    Runs BEFORE duration constraints so that short anchor segments (e.g. a 2s
+        //    black-frame transition at the very start of a break) can be bridged into the
+        //    main cluster before the duration filter discards them.
+        if (config.CommercialMergeGapSeconds > 0)
+            segments = MergeCommercialGaps(segments, config.CommercialMergeGapSeconds);
+
+        // 7. Apply duration constraints
         segments = ApplyDurationConstraints(segments, config);
 
         return new AnalysisResult
@@ -88,11 +120,17 @@ public class CommercialClassifier : ICommercialClassifier
             [SignalType.Silence] = config.SilenceWeight,
             [SignalType.LogoAbsence] = config.LogoAbsenceWeight,
             [SignalType.AspectRatioChange] = config.AspectRatioWeight,
-            [SignalType.AudioRepetition] = config.AudioRepetitionWeight
+            [SignalType.AudioRepetition] = config.AudioRepetitionWeight,
+            [SignalType.Letterbox] = config.LetterboxWeight
         };
 
-        // Normalize weights to sum to 1.0 based on active signals only
-        var activeWeightSum = signals.Keys.Sum(k => weights.GetValueOrDefault(k, 0.0));
+        // Normalize weights to sum to 1.0 based on signals that produced results.
+        // Signals that ran but returned no events (e.g. logo suppressed, letterbox
+        // disabled) must not inflate the denominator — doing so dilutes every other
+        // signal's normalized contribution and can push scores below the threshold.
+        var activeWeightSum = signals
+            .Where(kvp => kvp.Value.Count > 0)
+            .Sum(kvp => weights.GetValueOrDefault(kvp.Key, 0.0));
         if (activeWeightSum <= 0) activeWeightSum = 1.0;
 
         for (int i = 0; i < windows.Count; i++)
@@ -218,5 +256,47 @@ public class CommercialClassifier : ICommercialClassifier
         }
 
         return merged;
+    }
+
+    private List<ContentSegment> MergeCommercialGaps(
+        List<ContentSegment> segments, double maxGapSeconds)
+    {
+        if (segments.Count < 3) return segments;
+
+        var result = new List<ContentSegment>(segments);
+        bool changed = true;
+
+        // Repeat until no more merges occur (handles chains of short gaps)
+        while (changed)
+        {
+            changed = false;
+            for (int i = 1; i + 1 < result.Count; i++)
+            {
+                var prev = result[i - 1];
+                var gap  = result[i];
+                var next = result[i + 1];
+
+                if (prev.Type == SegmentType.Commercial &&
+                    gap.Type  == SegmentType.Program    &&
+                    next.Type == SegmentType.Commercial &&
+                    gap.DurationSeconds <= maxGapSeconds)
+                {
+                    _logger?.LogDebug(
+                        "MergeGap: bridging {Gap:F1}s program gap at {Start:F1}s–{End:F1}s between two commercial segments",
+                        gap.DurationSeconds, gap.Start.TotalSeconds, gap.End.TotalSeconds);
+
+                    // Extend prev to cover the gap and next, then remove gap + next
+                    prev.End      = next.End;
+                    prev.EndFrame = next.EndFrame;
+                    prev.Confidence = (prev.Confidence + next.Confidence) / 2.0;
+                    result.RemoveAt(i + 1); // remove next
+                    result.RemoveAt(i);     // remove gap
+                    changed = true;
+                    break; // restart scan after structural change
+                }
+            }
+        }
+
+        return result;
     }
 }

@@ -73,7 +73,26 @@ public class Program
                 return;
             }
 
-            var config = LoadDetectionConfig(preset!, configFile);
+            // ── logging setup ────────────────────────────────────────────
+            var logCfg = LoadLoggingConfig();
+            FileLoggerProvider? fileLogger = null;
+            string? logEdlPath = null;
+
+            if (logCfg.Enabled)
+            {
+                PurgeOldLogFiles(logCfg);
+                var stem = SanitizeForFileName(Path.GetFileNameWithoutExtension(input.Name));
+                var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+                Directory.CreateDirectory(logCfg.LogDirectory);
+                Directory.CreateDirectory(logCfg.EdlDirectory);
+                var logPath = Path.Combine(logCfg.LogDirectory, $"{stem}_{stamp}.log");
+                logEdlPath  = Path.Combine(logCfg.EdlDirectory, $"{stem}_{stamp}.edl");
+                fileLogger  = new FileLoggerProvider(logPath);
+            }
+
+            Action<string> log = msg => { Console.WriteLine(msg); fileLogger?.WriteLine(msg); };
+
+            var config = LoadDetectionConfig(preset!, configFile, log);
             if (formats != null && formats.Length > 0)
                 config.OutputFormats = new List<OutputFormat>(formats);
 
@@ -91,11 +110,11 @@ public class Program
                 }
             }
 
-            var processConfig = LoadProcessingConfig(processConfigFile);
+            var processConfig = LoadProcessingConfig(processConfigFile, log);
             if (force)
                 processConfig.OverwriteExisting = true;
 
-            var services = BuildServices(ffmpegPath, verbose);
+            var services = BuildServices(ffmpegPath, verbose, fileLoggerProvider: fileLogger);
             var pipeline = services.GetRequiredService<DetectionPipeline>();
             var progress = new ConsoleProgress();
 
@@ -146,6 +165,14 @@ public class Program
                 Console.WriteLine($"Total commercial time: {commercials.Sum(s => s.DurationSeconds):F1}s");
                 Console.WriteLine($"Analysis time: {result.AnalysisDuration.TotalSeconds:F1}s");
 
+                // Copy EDL to archive directory
+                if (logEdlPath != null)
+                {
+                    var sourceEdl = Path.ChangeExtension(input.FullName, ".edl");
+                    if (File.Exists(sourceEdl))
+                        File.Copy(sourceEdl, logEdlPath, overwrite: true);
+                }
+
                 // Post-processing: cut or chapter-mark the file
                 if (processConfig.Mode != ProcessingMode.Skip && commercials.Count > 0)
                 {
@@ -189,6 +216,10 @@ public class Program
                 Console.Error.WriteLine($"Error: {ex.Message}");
                 if (verbose) Console.Error.WriteLine(ex.StackTrace);
                 ctx.ExitCode = 1;
+            }
+            finally
+            {
+                fileLogger?.Dispose();
             }
         });
 
@@ -618,7 +649,7 @@ public class Program
 
     // ── Shared Helpers ──────────────────────────────────────────────────
 
-    private static DetectionConfig LoadDetectionConfig(string preset, FileInfo? configFile)
+    private static DetectionConfig LoadDetectionConfig(string preset, FileInfo? configFile, Action<string>? log = null)
     {
         DetectionConfig config = preset switch
         {
@@ -627,39 +658,53 @@ public class Program
             _ => new DetectionConfig()
         };
 
-        // Explicit --config path supplied
-        if (configFile?.Exists == true)
-        {
-            if (configFile.Extension.Equals(".ini", StringComparison.OrdinalIgnoreCase))
-            {
-                var ini = IniFile.Load(configFile.FullName);
-                config = DetectionIniMapper.LoadDetectionConfig(ini, config);
-                Console.WriteLine($"Detection config: {configFile.FullName}");
-            }
-            else
-            {
-                string json = File.ReadAllText(configFile.FullName);
-                config = JsonSerializer.Deserialize<DetectionConfig>(json,
-                             new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
-                         ?? config;
-                Console.WriteLine($"Detection config: {configFile.FullName}");
-            }
-            return config;
-        }
-
-        // Auto-discover commdetect.ini
+        // Always load commdetect.ini first as the base layer (global defaults,
+        // Emby credentials, etc.). A per-show --config then overlays only the
+        // keys it specifies, inheriting everything else from commdetect.ini.
         string? autoIni = GetConfigSearchPaths("commdetect.ini").FirstOrDefault(File.Exists);
         if (autoIni != null)
         {
             var ini = IniFile.Load(autoIni);
             config = DetectionIniMapper.LoadDetectionConfig(ini, config);
-            Console.WriteLine($"Detection config: {autoIni} (auto-discovered)");
+            log?.Invoke($"Detection config: {autoIni} (auto-discovered)");
+        }
+
+        // Per-show --config overlays on top of the commdetect.ini base.
+        // If the path doesn't exist as given, search the same locations as commdetect.ini
+        // so bare filenames like --config Today-Show.ini resolve from /usr/bin/ etc.
+        if (configFile != null)
+        {
+            string configPath = configFile.FullName;
+            if (!File.Exists(configPath))
+                configPath = GetConfigSearchPaths(configFile.Name).FirstOrDefault(File.Exists) ?? configPath;
+
+            if (File.Exists(configPath))
+            {
+                if (Path.GetExtension(configPath).Equals(".ini", StringComparison.OrdinalIgnoreCase))
+                {
+                    var ini = IniFile.Load(configPath);
+                    config = DetectionIniMapper.LoadDetectionConfig(ini, config);
+                    log?.Invoke($"Detection config override: {configPath}");
+                }
+                else
+                {
+                    string json = File.ReadAllText(configPath);
+                    config = JsonSerializer.Deserialize<DetectionConfig>(json,
+                                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+                             ?? config;
+                    log?.Invoke($"Detection config override: {configPath}");
+                }
+            }
+            else
+            {
+                Console.Error.WriteLine($"Warning: --config file not found: {configFile.Name}");
+            }
         }
 
         return config;
     }
 
-    private static ProcessingConfig LoadProcessingConfig(FileInfo? configFile)
+    private static ProcessingConfig LoadProcessingConfig(FileInfo? configFile, Action<string>? log = null)
     {
         // Explicit --process-config path supplied
         if (configFile?.Exists == true &&
@@ -667,7 +712,7 @@ public class Program
         {
             var ini = IniFile.Load(configFile.FullName);
             var cfg = ProcessingIniMapper.LoadProcessingConfig(ini);
-            Console.WriteLine($"Processing config: {configFile.FullName}");
+            log?.Invoke($"Processing config: {configFile.FullName}");
             return cfg;
         }
 
@@ -677,11 +722,56 @@ public class Program
         {
             var ini = IniFile.Load(autoIni);
             var cfg = ProcessingIniMapper.LoadProcessingConfig(ini);
-            Console.WriteLine($"Processing config: {autoIni} (auto-discovered)");
+            log?.Invoke($"Processing config: {autoIni} (auto-discovered)");
             return cfg;
         }
 
         return new ProcessingConfig(); // defaults to Skip mode
+    }
+
+    // ── logging helpers ─────────────────────────────────────────────────
+
+    /// <summary>
+    /// Loads LoggingConfig from commdetect.ini (base config only; per-show overrides
+    /// do not normally carry logging settings).
+    /// </summary>
+    private static LoggingConfig LoadLoggingConfig()
+    {
+        string? autoIni = GetConfigSearchPaths("commdetect.ini").FirstOrDefault(File.Exists);
+        if (autoIni == null) return new LoggingConfig();
+        return DetectionIniMapper.LoadLoggingConfig(IniFile.Load(autoIni));
+    }
+
+    /// <summary>
+    /// Returns a sanitized filename stem derived from the input media filename.
+    /// Replaces characters invalid in file names with underscores.
+    /// </summary>
+    private static string SanitizeForFileName(string name)
+    {
+        var invalid = Path.GetInvalidFileNameChars();
+        return new string(name.Select(c => invalid.Contains(c) ? '_' : c).ToArray());
+    }
+
+    /// <summary>
+    /// Deletes log/EDL archive files older than <paramref name="retentionDays"/> days
+    /// from both archive directories.
+    /// </summary>
+    private static void PurgeOldLogFiles(LoggingConfig cfg)
+    {
+        var cutoff = DateTime.Now.AddDays(-cfg.RetentionDays);
+        foreach (var dir in new[] { cfg.LogDirectory, cfg.EdlDirectory })
+        {
+            if (!Directory.Exists(dir)) continue;
+            foreach (var file in Directory.GetFiles(dir))
+            {
+                try
+                {
+                    if (File.GetLastWriteTime(file) < cutoff)
+                        File.Delete(file);
+                }
+                catch { /* best-effort; ignore locked or permission-denied files */ }
+            }
+        }
     }
 
     /// <summary>Candidate paths to search for a named config file, in priority order.</summary>
@@ -712,13 +802,16 @@ public class Program
     }
 
     private static ServiceProvider BuildServices(
-        string? ffmpegPath, bool verbose, bool preferEmbyFFmpeg = false)
+        string? ffmpegPath, bool verbose, bool preferEmbyFFmpeg = false,
+        ILoggerProvider? fileLoggerProvider = null)
     {
         var services = new ServiceCollection();
 
         services.AddLogging(builder =>
         {
             builder.AddConsole();
+            if (fileLoggerProvider != null)
+                builder.AddProvider(fileLoggerProvider);
             builder.SetMinimumLevel(verbose ? LogLevel.Debug : LogLevel.Information);
         });
 
@@ -734,6 +827,7 @@ public class Program
         services.AddSingleton<IAudioExtractor, FFmpegAudioExtractor>();
 
         services.AddSingleton<ISignalDetector, BlackFrameDetector>();
+        services.AddSingleton<ISignalDetector, LetterboxDetector>();
         services.AddSingleton<ISignalDetector, SceneChangeDetector>();
         services.AddSingleton<ISignalDetector, SilenceDetector>();
         services.AddSingleton<ISignalDetector, LogoDetector>();
