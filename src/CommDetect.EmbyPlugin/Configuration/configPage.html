@@ -811,7 +811,7 @@
         </div>
 
     <script type="text/javascript">
-    (function () {
+    window.addEventListener('load', function () {
         'use strict';
 
         var pluginId = '7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c';
@@ -821,7 +821,7 @@
         view.style.zIndex = '100';
         view.style.opacity = '1';
         view.style.position = 'absolute';
-        view.querySelector('#CommDetectConfigForm').style.background = '#fff';
+        view.style.background = '#fff';
 
         // ── Tab switching ────────────────────────────────────────────────────
         var buttons = view.querySelectorAll('.cd-tab');
