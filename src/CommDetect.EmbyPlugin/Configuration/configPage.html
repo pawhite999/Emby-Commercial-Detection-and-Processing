@@ -868,11 +868,6 @@
         function View(view, params) {
             BaseView.apply(this, arguments);
 
-            var form = view.querySelector('#CommDetectConfigForm');
-            if (form) form.style.setProperty('background-color', '#ffffff', 'important');
-
-            initTabs(view);
-
             view.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
                 e.preventDefault();
                 ApiClient.updatePluginConfiguration(pluginId, collectConfig(view)).then(function () {
@@ -887,9 +882,13 @@
             BaseView.prototype.onResume.apply(this, arguments);
             loading.show();
             var view = this.view;
-            view.querySelector('#CommDetectConfigForm').style.backgroundColor = '#ffffff';
+            var form = view.querySelector('#CommDetectConfigForm');
+            if (form) form.style.setProperty('background-color', '#ffffff', 'important');
+            initTabs(view);
             ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                 loadConfig(view, config);
+                loading.hide();
+            }).catch(function () {
                 loading.hide();
             });
         };
