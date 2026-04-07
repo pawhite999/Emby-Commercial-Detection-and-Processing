@@ -868,6 +868,9 @@
         function View(view, params) {
             BaseView.apply(this, arguments);
 
+            var form = view.querySelector('#CommDetectConfigForm');
+            if (form) form.style.setProperty('background-color', '#ffffff', 'important');
+
             initTabs(view);
 
             view.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
