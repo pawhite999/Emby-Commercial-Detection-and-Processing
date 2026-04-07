@@ -17,15 +17,15 @@
                     </div>
                 </div>
 
-                <div class="tabs-wrapper">
-                    <div data-role="controlgroup" data-type="horizontal" class="localnav">
-                        <a href="#tab-general"    class="ui-btn ui-btn-active" data-toggle="tab">General</a>
-                        <a href="#tab-detection"  class="ui-btn" data-toggle="tab">Detection</a>
-                        <a href="#tab-detectors"  class="ui-btn" data-toggle="tab">Detectors</a>
-                        <a href="#tab-processing" class="ui-btn" data-toggle="tab">Processing</a>
-                        <a href="#tab-encoding"   class="ui-btn" data-toggle="tab">Encoding</a>
-                        <a href="#tab-logging"    class="ui-btn" data-toggle="tab">Logging &amp; Output</a>
-                        <a href="#tab-advanced"   class="ui-btn" data-toggle="tab">Advanced</a>
+                <div class="tabs-wrapper" style="margin-bottom:1em;">
+                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
+                        <button type="button" class="cd-tab ui-btn ui-btn-active" data-target="tab-general">General</button>
+                        <button type="button" class="cd-tab ui-btn" data-target="tab-detection">Detection</button>
+                        <button type="button" class="cd-tab ui-btn" data-target="tab-detectors">Detectors</button>
+                        <button type="button" class="cd-tab ui-btn" data-target="tab-processing">Processing</button>
+                        <button type="button" class="cd-tab ui-btn" data-target="tab-encoding">Encoding</button>
+                        <button type="button" class="cd-tab ui-btn" data-target="tab-logging">Logging &amp; Output</button>
+                        <button type="button" class="cd-tab ui-btn" data-target="tab-advanced">Advanced</button>
                     </div>
                 </div>
 
@@ -824,20 +824,19 @@
 
         // ── Tab switching ────────────────────────────────────────────────────
         function initTabs(page) {
-            var links = page.querySelectorAll('.localnav a');
-            links.forEach(function (link) {
-                link.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    var targetId = this.getAttribute('href').replace('#', '');
+            var buttons = page.querySelectorAll('.cd-tab');
+            buttons.forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    var targetId = this.getAttribute('data-target');
 
                     // hide all panels
                     page.querySelectorAll('.tab-content').forEach(function (tab) {
                         tab.style.display = 'none';
                     });
                     // remove active from all tabs
-                    links.forEach(function (l) { l.classList.remove('ui-btn-active'); });
+                    buttons.forEach(function (b) { b.classList.remove('ui-btn-active'); });
 
-                    // show target panel and mark link active
+                    // show target panel and mark button active
                     var target = page.querySelector('#' + targetId);
                     if (target) target.style.display = '';
                     this.classList.add('ui-btn-active');
@@ -880,23 +879,19 @@
         }
 
         // ── Page init ────────────────────────────────────────────────────────
-        document.addEventListener('pageshow', function (e) {
-            var page = e.target;
-            if (page.id !== 'CommDetectConfigPage') return;
+        var page = document.querySelector('#CommDetectConfigPage');
 
+        page.addEventListener('pageshow', function () {
             initTabs(page);
-
             ApiClient.getPluginConfiguration('7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c').then(function (config) {
                 loadConfig(page, config);
             });
         });
 
         // ── Form submit ──────────────────────────────────────────────────────
-        document.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
+        page.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
             e.preventDefault();
-            var page = document.querySelector('#CommDetectConfigPage');
             var config = collectConfig(page);
-
             ApiClient.updatePluginConfiguration('7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c', config).then(function () {
                 Dashboard.processPluginConfigurationUpdateResult();
             });
