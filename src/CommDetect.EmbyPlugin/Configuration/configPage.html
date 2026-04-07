@@ -816,6 +816,19 @@
 
         var pluginId = '7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c';
 
+        function getConfig() {
+            return ApiClient.getJSON(ApiClient.getUrl('Plugins/' + pluginId + '/Configuration'));
+        }
+
+        function saveConfig(config) {
+            return ApiClient.ajax({
+                type: 'POST',
+                url: ApiClient.getUrl('Plugins/' + pluginId + '/Configuration'),
+                data: JSON.stringify(config),
+                contentType: 'application/json'
+            });
+        }
+
         // ── Tab switching ────────────────────────────────────────────────────
         function initTabs(view) {
             var buttons = view.querySelectorAll('.cd-tab');
@@ -870,7 +883,9 @@
 
             view.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
                 e.preventDefault();
-                ApiClient.updatePluginConfiguration(pluginId, collectConfig(view)).then(function () {
+                saveConfig(collectConfig(view)).then(function () {
+                    Dashboard.processPluginConfigurationUpdateResult();
+                }).catch(function () {
                     Dashboard.processPluginConfigurationUpdateResult();
                 });
             });
@@ -885,12 +900,16 @@
             var form = view.querySelector('#CommDetectConfigForm');
             if (form) form.style.setProperty('background-color', '#ffffff', 'important');
             initTabs(view);
-            ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                loadConfig(view, config);
+            try {
+                getConfig().then(function (config) {
+                    loadConfig(view, config);
+                    loading.hide();
+                }).catch(function () {
+                    loading.hide();
+                });
+            } catch (e) {
                 loading.hide();
-            }).catch(function () {
-                loading.hide();
-            });
+            }
         };
 
         return View;
