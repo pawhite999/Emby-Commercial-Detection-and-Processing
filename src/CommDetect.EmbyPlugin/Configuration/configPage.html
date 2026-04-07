@@ -811,32 +811,36 @@
         </div>
 
     <script type="text/javascript">
-    define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (BaseView, loading) {
+    (function () {
         'use strict';
 
         var pluginId = '7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c';
+        var view = document.getElementById('CommDetectConfigPage');
+
+        // ── Apply styles immediately (Emby strips <style> blocks) ────────────
+        view.style.zIndex = '100';
+        view.style.opacity = '1';
+        view.style.position = 'absolute';
+        view.querySelector('#CommDetectConfigForm').style.background = '#fff';
 
         // ── Tab switching ────────────────────────────────────────────────────
-        function initTabs(view) {
-            var buttons = view.querySelectorAll('.cd-tab');
-            buttons.forEach(function (btn) {
-                btn.addEventListener('click', function () {
-                    var targetId = this.getAttribute('data-target');
-                    view.querySelectorAll('.tab-content').forEach(function (tab) {
-                        tab.style.display = 'none';
-                    });
-                    buttons.forEach(function (b) { b.classList.remove('ui-btn-active'); });
-                    var target = view.querySelector('#' + targetId);
-                    if (target) target.style.display = '';
-                    this.classList.add('ui-btn-active');
+        var buttons = view.querySelectorAll('.cd-tab');
+        buttons.forEach(function (btn) {
+            btn.addEventListener('click', function () {
+                var targetId = this.getAttribute('data-target');
+                view.querySelectorAll('.tab-content').forEach(function (tab) {
+                    tab.style.display = 'none';
                 });
+                buttons.forEach(function (b) { b.classList.remove('ui-btn-active'); });
+                var target = view.querySelector('#' + targetId);
+                if (target) target.style.display = '';
+                this.classList.add('ui-btn-active');
             });
-        }
+        });
 
         // ── Populate form from config ────────────────────────────────────────
-        function loadConfig(view, config) {
-            var fields = view.querySelectorAll('input, select');
-            fields.forEach(function (field) {
+        function loadConfig(config) {
+            view.querySelectorAll('input, select').forEach(function (field) {
                 var name = field.getAttribute('name');
                 if (!name || !(name in config)) return;
                 if (field.type === 'checkbox') {
@@ -848,7 +852,7 @@
         }
 
         // ── Collect form values into config object ───────────────────────────
-        function collectConfig(view) {
+        function collectConfig() {
             var config = {};
             view.querySelectorAll('input, select').forEach(function (field) {
                 var name = field.getAttribute('name');
@@ -864,38 +868,30 @@
             return config;
         }
 
-        // ── View constructor ─────────────────────────────────────────────────
-        function View(view, params) {
-            BaseView.apply(this, arguments);
-
-            // Force page above other positioned pages (Emby strips <style> blocks)
-            view.style.zIndex = '10';
-            view.style.opacity = '1';
-            view.querySelector('#CommDetectConfigForm').style.background = '#fff';
-
-            initTabs(view);
-
-            view.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
-                e.preventDefault();
-                ApiClient.updatePluginConfiguration(pluginId, collectConfig(view)).then(function () {
-                    Dashboard.processPluginConfigurationUpdateResult();
-                });
+        // ── Load config on any page-show event ───────────────────────────────
+        var loaded = false;
+        function doLoad() {
+            if (loaded) return;
+            loaded = true;
+            ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                loadConfig(config);
             });
         }
+        ['viewshow', 'pageshow', 'pagebeforeshow'].forEach(function (evt) {
+            view.addEventListener(evt, doLoad);
+        });
+        // Fallback: load after short delay in case events already fired
+        setTimeout(doLoad, 300);
 
-        Object.assign(View.prototype, BaseView.prototype);
-
-        View.prototype.onResume = function (options) {
-            BaseView.prototype.onResume.apply(this, arguments);
-            loading.show();
-            var view = this.view;
-            ApiClient.getPluginConfiguration(pluginId).then(function (config) {
-                loadConfig(view, config);
-                loading.hide();
+        // ── Form submit ──────────────────────────────────────────────────────
+        view.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            loaded = false; // allow reload after save
+            ApiClient.updatePluginConfiguration(pluginId, collectConfig()).then(function () {
+                Dashboard.processPluginConfigurationUpdateResult();
             });
-        };
+        });
 
-        return View;
-    });
+    }());
     </script>
 </div>
