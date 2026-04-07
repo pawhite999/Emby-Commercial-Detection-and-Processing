@@ -1,14 +1,4 @@
 <div id="CommDetectConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
-    <style>
-    #CommDetectConfigPage {
-        opacity: 1 !important;
-        min-height: 100%;
-        z-index: 10 !important;
-    }
-    #CommDetectConfigForm {
-        background: #fff;
-    }
-    </style>
     <div class="content-primary">
 
             <form id="CommDetectConfigForm">
@@ -877,6 +867,11 @@
         // ── View constructor ─────────────────────────────────────────────────
         function View(view, params) {
             BaseView.apply(this, arguments);
+
+            // Force page above other positioned pages (Emby strips <style> blocks)
+            view.style.zIndex = '10';
+            view.style.opacity = '1';
+            view.querySelector('#CommDetectConfigForm').style.background = '#fff';
 
             initTabs(view);
 
