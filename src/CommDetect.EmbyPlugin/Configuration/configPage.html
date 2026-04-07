@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>CommDetect</title>
+</head>
+<body>
+<div id="CommDetectConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+    <div data-role="content">
+        <div class="content-primary">
+
+            <form id="CommDetectConfigForm">
+
+                <!-- ── Tab bar ──────────────────────────────────────────── -->
+                <div class="verticalSection">
+                    <div class="sectionTitle" style="font-size:1.4em;margin-bottom:0.5em;">
+                        CommDetect &mdash; Commercial Detection and Processing
+                    </div>
+                </div>
+
+                <div class="tabs-wrapper">
+                    <div data-role="controlgroup" data-type="horizontal" class="localnav">
+                        <a href="#tab-general"    class="ui-btn ui-btn-active" data-toggle="tab">General</a>
+                        <a href="#tab-detection"  class="ui-btn" data-toggle="tab">Detection</a>
+                        <a href="#tab-detectors"  class="ui-btn" data-toggle="tab">Detectors</a>
+                        <a href="#tab-processing" class="ui-btn" data-toggle="tab">Processing</a>
+                        <a href="#tab-encoding"   class="ui-btn" data-toggle="tab">Encoding</a>
+                        <a href="#tab-logging"    class="ui-btn" data-toggle="tab">Logging &amp; Output</a>
+                        <a href="#tab-advanced"   class="ui-btn" data-toggle="tab">Advanced</a>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════════════════════════════
+                     TAB: GENERAL
+                ════════════════════════════════════════════════════════ -->
+                <div id="tab-general" class="tab-content">
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">Plugin</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="CommdetectBinaryPath">Path to commdetect binary</label>
+                            <input id="CommdetectBinaryPath" name="CommdetectBinaryPath" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Full path, e.g. <code>/usr/local/bin/commdetect</code>. The plugin writes ini files to the same directory as this binary.</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">commdetect.ini &mdash; [General]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="Preset">Preset</label>
+                            <select id="Preset" name="Preset" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="fast">fast</option>
+                                <option value="default">default</option>
+                                <option value="accurate">accurate</option>
+                            </select>
+                            <div class="fieldDescription">Detection quality preset. <em>fast</em> skips logo detection; <em>accurate</em> enables all detectors at higher cost.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="WindowSize">Window size (seconds)</label>
+                            <input id="WindowSize" name="WindowSize" type="number" step="0.1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Scoring window size in seconds.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="FrameSampleRate">Frame sample rate (fps)</label>
+                            <input id="FrameSampleRate" name="FrameSampleRate" type="number" step="0.1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Frames per second extracted for analysis.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="MaxParallelism">Max parallelism</label>
+                            <input id="MaxParallelism" name="MaxParallelism" type="number" step="1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Maximum parallel detector threads. 0 = use all CPU cores.</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">commdetect.ini &mdash; [Emby]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="EmbyServerUrl">Emby server URL</label>
+                            <input id="EmbyServerUrl" name="EmbyServerUrl" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>http://localhost:8096</code></div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="EmbyApiKey">Emby API key</label>
+                            <input id="EmbyApiKey" name="EmbyApiKey" type="text" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">commdetect.ini &mdash; [Watch]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="WatchStabilityDelay">Stability delay (seconds)</label>
+                            <input id="WatchStabilityDelay" name="WatchStabilityDelay" type="number" step="1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Wait this many seconds after a file stops growing before processing it.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="WatchMinFileSizeMb">Minimum file size (MB)</label>
+                            <input id="WatchMinFileSizeMb" name="WatchMinFileSizeMb" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="WatchSkipAlreadyProcessed" name="WatchSkipAlreadyProcessed" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Skip files already processed</span>
+                            </label>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="WatchMaxConcurrentJobs">Max concurrent jobs</label>
+                            <input id="WatchMaxConcurrentJobs" name="WatchMaxConcurrentJobs" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="WatchFileExtensions">File extensions to watch</label>
+                            <input id="WatchFileExtensions" name="WatchFileExtensions" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Comma-separated, e.g. <code>.ts,.mpg,.mp4,.mkv</code></div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="WatchExcludePatterns">Exclude patterns</label>
+                            <input id="WatchExcludePatterns" name="WatchExcludePatterns" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Comma-separated glob patterns to ignore, e.g. <code>*.partial.*,*temp*</code></div>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="WatchProcessExistingOnStartup" name="WatchProcessExistingOnStartup" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Process existing files on startup</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════════════════════════════
+                     TAB: DETECTION
+                ════════════════════════════════════════════════════════ -->
+                <div id="tab-detection" class="tab-content" style="display:none;">
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">commdetect.ini &mdash; [Detection]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="CommercialThreshold">Commercial threshold</label>
+                            <input id="CommercialThreshold" name="CommercialThreshold" type="number" step="0.01" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Combined detector score required to classify a segment as commercial (0&ndash;1). Lower = more sensitive.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SmoothingRadius">Smoothing radius (windows)</label>
+                            <input id="SmoothingRadius" name="SmoothingRadius" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SkipStartSeconds">Skip start (seconds)</label>
+                            <input id="SkipStartSeconds" name="SkipStartSeconds" type="number" step="1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Ignore this many seconds at the start of the recording (matches DVR pre-padding).</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SkipEndSeconds">Skip end (seconds)</label>
+                            <input id="SkipEndSeconds" name="SkipEndSeconds" type="number" step="1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Ignore this many seconds at the end of the recording (matches DVR post-padding).</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="MinCommercialSeconds">Min commercial duration (seconds)</label>
+                            <input id="MinCommercialSeconds" name="MinCommercialSeconds" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="MaxCommercialSeconds">Max commercial duration (seconds)</label>
+                            <input id="MaxCommercialSeconds" name="MaxCommercialSeconds" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="PaddingSeconds">Padding (seconds)</label>
+                            <input id="PaddingSeconds" name="PaddingSeconds" type="number" step="0.1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Extra time added around detected break boundaries.</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">commdetect.ini &mdash; [Psip] &amp; [Xds]</h2>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="PsipEnabled" name="PsipEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Enable PSIP metadata parsing</span>
+                            </label>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="XdsEnabled" name="XdsEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Enable XDS (Extended Data Services) parsing</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════════════════════════════
+                     TAB: DETECTORS
+                ════════════════════════════════════════════════════════ -->
+                <div id="tab-detectors" class="tab-content" style="display:none;">
+
+                    <!-- Black Frame -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">[BlackFrame]</h2>
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="BlackFrameEnabled" name="BlackFrameEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Enabled</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="BlackFrameLumaThreshold">Luma threshold</label>
+                            <input id="BlackFrameLumaThreshold" name="BlackFrameLumaThreshold" type="number" step="1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Maximum luma value to consider a pixel "black" (0&ndash;255). Default: 12.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="BlackFrameMinCount">Min black frame count</label>
+                            <input id="BlackFrameMinCount" name="BlackFrameMinCount" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="BlackFrameWeight">Weight</label>
+                            <input id="BlackFrameWeight" name="BlackFrameWeight" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="BlackFrameUseClustering" name="BlackFrameUseClustering" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Use clustering</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="BlackFrameClusterMaxGap">Cluster max gap (frames)</label>
+                            <input id="BlackFrameClusterMaxGap" name="BlackFrameClusterMaxGap" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="BlackFrameClusterMinDuration">Cluster min duration (frames)</label>
+                            <input id="BlackFrameClusterMinDuration" name="BlackFrameClusterMinDuration" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="BlackFrameClusterMinEvents">Cluster min events</label>
+                            <input id="BlackFrameClusterMinEvents" name="BlackFrameClusterMinEvents" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+
+                    <!-- Scene Change -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">[SceneChange]</h2>
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="SceneChangeEnabled" name="SceneChangeEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Enabled</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SceneChangeThreshold">Threshold</label>
+                            <input id="SceneChangeThreshold" name="SceneChangeThreshold" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SceneChangeRateThreshold">Rate threshold (cuts/min)</label>
+                            <input id="SceneChangeRateThreshold" name="SceneChangeRateThreshold" type="number" step="0.1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Scene changes per minute to classify a segment as a commercial. Default: 12.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SceneChangeWeight">Weight</label>
+                            <input id="SceneChangeWeight" name="SceneChangeWeight" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+
+                    <!-- Silence -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">[Silence]</h2>
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="SilenceEnabled" name="SilenceEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Enabled</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SilenceRmsThreshold">RMS threshold</label>
+                            <input id="SilenceRmsThreshold" name="SilenceRmsThreshold" type="number" step="0.001" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SilenceMinDuration">Min duration (seconds)</label>
+                            <input id="SilenceMinDuration" name="SilenceMinDuration" type="number" step="0.1" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SilenceWeight">Weight</label>
+                            <input id="SilenceWeight" name="SilenceWeight" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+
+                    <!-- Logo -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">[Logo]</h2>
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="LogoEnabled" name="LogoEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Enabled</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="LogoLearnDuration">Learn duration (seconds)</label>
+                            <input id="LogoLearnDuration" name="LogoLearnDuration" type="number" step="1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Seconds used to learn the network logo at the start of the recording.</div>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="LogoClusterMinEvents">Cluster min events</label>
+                            <input id="LogoClusterMinEvents" name="LogoClusterMinEvents" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="LogoWeight">Weight</label>
+                            <input id="LogoWeight" name="LogoWeight" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="LogoSsimThreshold">SSIM threshold</label>
+                            <input id="LogoSsimThreshold" name="LogoSsimThreshold" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="LogoCornerFilterRatio">Corner filter ratio</label>
+                            <input id="LogoCornerFilterRatio" name="LogoCornerFilterRatio" type="number" step="0.1" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+
+                    <!-- Letterbox -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">[Letterbox]</h2>
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="LetterboxEnabled" name="LetterboxEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Enabled</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="LetterboxWeight">Weight</label>
+                            <input id="LetterboxWeight" name="LetterboxWeight" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="LetterboxMinDuration">Min duration (seconds)</label>
+                            <input id="LetterboxMinDuration" name="LetterboxMinDuration" type="number" step="0.1" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="LetterboxPicThreshold">Pic threshold</label>
+                            <input id="LetterboxPicThreshold" name="LetterboxPicThreshold" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+
+                    <!-- Aspect Ratio -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">[AspectRatio]</h2>
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="AspectRatioEnabled" name="AspectRatioEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Enabled</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="AspectRatioWeight">Weight</label>
+                            <input id="AspectRatioWeight" name="AspectRatioWeight" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+
+                    <!-- Audio Fingerprint -->
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">[AudioFingerprint]</h2>
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="AudioFingerprintEnabled" name="AudioFingerprintEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Enabled</span>
+                            </label>
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="AudioFingerprintMinRepetitions">Min repetitions</label>
+                            <input id="AudioFingerprintMinRepetitions" name="AudioFingerprintMinRepetitions" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="AudioFingerprintWeight">Weight</label>
+                            <input id="AudioFingerprintWeight" name="AudioFingerprintWeight" type="number" step="0.01" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════════════════════════════
+                     TAB: PROCESSING  (comprocess.ini)
+                ════════════════════════════════════════════════════════ -->
+                <div id="tab-processing" class="tab-content" style="display:none;">
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">comprocess.ini &mdash; [General]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="ProcessingMode">Mode</label>
+                            <select id="ProcessingMode" name="ProcessingMode" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="cut">cut</option>
+                                <option value="chapters">chapters</option>
+                                <option value="edl">edl</option>
+                            </select>
+                            <div class="fieldDescription"><em>cut</em> — remove commercials; <em>chapters</em> — mark only; <em>edl</em> — write EDL without re-encoding.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="OriginalAction">Original file action</label>
+                            <select id="OriginalAction" name="OriginalAction" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="keep">keep</option>
+                                <option value="delete">delete</option>
+                                <option value="archive">archive</option>
+                            </select>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="OriginalArchiveDir">Archive directory</label>
+                            <input id="OriginalArchiveDir" name="OriginalArchiveDir" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Used when original action is <em>archive</em>.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="OutputNamePattern">Output name pattern</label>
+                            <input id="OutputNamePattern" name="OutputNamePattern" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>{name}.{mode}.{ext}</code></div>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="OverwriteExisting" name="OverwriteExisting" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Overwrite existing output files</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">comprocess.ini &mdash; [Container]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="ContainerFormat">Container format</label>
+                            <select id="ContainerFormat" name="ContainerFormat" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="mkv">mkv</option>
+                                <option value="mp4">mp4</option>
+                                <option value="ts">ts</option>
+                            </select>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="RemuxOnly" name="RemuxOnly" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Remux only (no re-encode)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">comprocess.ini &mdash; [ChapterMarking]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="ProgramChapterLabel">Program chapter label</label>
+                            <input id="ProgramChapterLabel" name="ProgramChapterLabel" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>Part {number}</code></div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="CommercialChapterLabel">Commercial chapter label</label>
+                            <input id="CommercialChapterLabel" name="CommercialChapterLabel" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>Commercial Break {number}</code></div>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="HideCommercialChapters" name="HideCommercialChapters" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Hide commercial chapters (ordered chapters edition)</span>
+                            </label>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="SetDefaultEdition" name="SetDefaultEdition" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Set as default edition</span>
+                            </label>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="ChapterTool">Chapter tool</label>
+                            <select id="ChapterTool" name="ChapterTool" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="auto">auto</option>
+                                <option value="mkvmerge">mkvmerge</option>
+                                <option value="ffmpeg">ffmpeg</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">comprocess.ini &mdash; [Cut]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="CutMethod">Cut method</label>
+                            <select id="CutMethod" name="CutMethod" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="concat">concat</option>
+                                <option value="smart">smart</option>
+                                <option value="reencode">reencode</option>
+                            </select>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="SmartReencodemargin">Smart re-encode margin (seconds)</label>
+                            <input id="SmartReencodemargin" name="SmartReencodemargin" type="number" step="0.1" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="FadeAtCuts" name="FadeAtCuts" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Fade audio/video at cut points</span>
+                            </label>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="FadeDuration">Fade duration (seconds)</label>
+                            <input id="FadeDuration" name="FadeDuration" type="number" step="0.1" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">comprocess.ini &mdash; [SubtitleHandling]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="CopySubtitles">Copy subtitles</label>
+                            <select id="CopySubtitles" name="CopySubtitles" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="all">all</option>
+                                <option value="preferred">preferred</option>
+                                <option value="none">none</option>
+                            </select>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="PreferredLanguages">Preferred subtitle languages</label>
+                            <input id="PreferredLanguages" name="PreferredLanguages" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Comma-separated ISO 639-2 codes, e.g. <code>eng,spa</code></div>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="AdjustTiming" name="AdjustTiming" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Adjust subtitle timing after cuts</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">comprocess.ini &mdash; [Metadata]</h2>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="CopyMetadata" name="CopyMetadata" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Copy source metadata to output</span>
+                            </label>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="AddProcessingInfo" name="AddProcessingInfo" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Add processing info to metadata</span>
+                            </label>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="CustomMetadata">Custom metadata</label>
+                            <input id="CustomMetadata" name="CustomMetadata" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Key=value pairs to inject, comma-separated.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════════════════════════════
+                     TAB: ENCODING
+                ════════════════════════════════════════════════════════ -->
+                <div id="tab-encoding" class="tab-content" style="display:none;">
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">comprocess.ini &mdash; [VideoEncode]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoCodec">Video codec</label>
+                            <input id="VideoCodec" name="VideoCodec" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">FFmpeg codec name, e.g. <code>libx264</code>, <code>libx265</code>, <code>hevc_nvenc</code></div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoPreset">Video preset</label>
+                            <input id="VideoPreset" name="VideoPreset" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>faster</code>, <code>medium</code>, <code>slow</code></div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoCrf">CRF</label>
+                            <input id="VideoCrf" name="VideoCrf" type="number" step="1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Constant rate factor (quality). Lower = better quality. x264: 0&ndash;51, typical 18&ndash;28.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoResolution">Resolution</label>
+                            <input id="VideoResolution" name="VideoResolution" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>1920x1080</code>. Leave blank to keep source resolution.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoPixelFormat">Pixel format</label>
+                            <input id="VideoPixelFormat" name="VideoPixelFormat" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>yuv420p</code></div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoHwAccel">Hardware acceleration</label>
+                            <select id="VideoHwAccel" name="VideoHwAccel" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="none">none</option>
+                                <option value="nvenc">nvenc</option>
+                                <option value="vaapi">vaapi</option>
+                                <option value="qsv">qsv</option>
+                                <option value="videotoolbox">videotoolbox</option>
+                            </select>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoDeinterlace">Deinterlace filter</label>
+                            <input id="VideoDeinterlace" name="VideoDeinterlace" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">FFmpeg filter string, e.g. <code>bwdif=mode=1</code>. Leave blank to disable.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoExtraFilters">Extra video filters</label>
+                            <input id="VideoExtraFilters" name="VideoExtraFilters" type="text" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoExtraArgs">Extra FFmpeg video arguments</label>
+                            <input id="VideoExtraArgs" name="VideoExtraArgs" type="text" is="emby-input" class="emby-input" />
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">comprocess.ini &mdash; [AudioEncode]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="AudioCodec">Audio codec</label>
+                            <input id="AudioCodec" name="AudioCodec" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>aac</code>, <code>ac3</code>, <code>copy</code></div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="AudioBitrate">Audio bitrate</label>
+                            <input id="AudioBitrate" name="AudioBitrate" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>192k</code></div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="AudioSampleRate">Sample rate</label>
+                            <input id="AudioSampleRate" name="AudioSampleRate" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>48000</code>. Leave blank to keep source.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="AudioChannels">Channels</label>
+                            <input id="AudioChannels" name="AudioChannels" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">e.g. <code>2</code> for stereo, <code>6</code> for 5.1. Leave blank to keep source.</div>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="AudioNormalize" name="AudioNormalize" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Normalize audio loudness</span>
+                            </label>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="AudioNormalizeTarget">Normalization target (LUFS)</label>
+                            <input id="AudioNormalizeTarget" name="AudioNormalizeTarget" type="number" step="1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Integrated loudness target in LUFS, e.g. <code>-16</code>.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════════════════════════════
+                     TAB: LOGGING & OUTPUT
+                ════════════════════════════════════════════════════════ -->
+                <div id="tab-logging" class="tab-content" style="display:none;">
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">commdetect.ini &mdash; [Logging]</h2>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="LoggingEnabled" name="LoggingEnabled" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Logging enabled</span>
+                            </label>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="LogDir">Log directory</label>
+                            <input id="LogDir" name="LogDir" type="text" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="EdlDir">EDL output directory</label>
+                            <input id="EdlDir" name="EdlDir" type="text" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="RetentionDays">Log retention (days)</label>
+                            <input id="RetentionDays" name="RetentionDays" type="number" step="1" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="VideoDir">Video directory</label>
+                            <input id="VideoDir" name="VideoDir" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Root directory to watch for recordings. Leave blank to rely on Emby post-processor arguments.</div>
+                        </div>
+                    </div>
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">commdetect.ini &mdash; [Output]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="OutputFormats">Output formats</label>
+                            <input id="OutputFormats" name="OutputFormats" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Comma-separated: <code>edl</code>, <code>comskip</code>, <code>mkvchapters</code>, <code>json</code>, <code>ffmetadata</code></div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="OutputLocation">Output location</label>
+                            <select id="OutputLocation" name="OutputLocation" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="alongside">alongside (same directory as video)</option>
+                                <option value="edl_dir">edl_dir</option>
+                                <option value="log_dir">log_dir</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ════════════════════════════════════════════════════════
+                     TAB: ADVANCED
+                ════════════════════════════════════════════════════════ -->
+                <div id="tab-advanced" class="tab-content" style="display:none;">
+
+                    <div class="verticalSection">
+                        <h2 class="sectionTitle">comprocess.ini &mdash; [Advanced]</h2>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="FfmpegPath">FFmpeg path</label>
+                            <input id="FfmpegPath" name="FfmpegPath" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Full path to ffmpeg binary. Leave blank to use PATH.</div>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="FfprobePath">FFprobe path</label>
+                            <input id="FfprobePath" name="FfprobePath" type="text" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="MkvmergePath">mkvmerge path</label>
+                            <input id="MkvmergePath" name="MkvmergePath" type="text" is="emby-input" class="emby-input" />
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="TempDir">Temp directory</label>
+                            <input id="TempDir" name="TempDir" type="text" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Temporary working directory for cut operations. Must be writable by the Emby process.</div>
+                        </div>
+
+                        <div class="checkboxContainer">
+                            <label>
+                                <input id="KeepTempFiles" name="KeepTempFiles" type="checkbox" is="emby-checkbox" class="emby-checkbox" />
+                                <span>Keep temporary files after processing</span>
+                            </label>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="ProcessPriority">Process priority</label>
+                            <select id="ProcessPriority" name="ProcessPriority" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="idle">idle</option>
+                                <option value="below_normal">below_normal</option>
+                                <option value="normal">normal</option>
+                                <option value="above_normal">above_normal</option>
+                                <option value="high">high</option>
+                            </select>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="FfmpegLogLevel">FFmpeg log level</label>
+                            <select id="FfmpegLogLevel" name="FfmpegLogLevel" is="emby-select" class="emby-select-withcolor emby-select">
+                                <option value="quiet">quiet</option>
+                                <option value="error">error</option>
+                                <option value="warning">warning</option>
+                                <option value="info">info</option>
+                                <option value="verbose">verbose</option>
+                                <option value="debug">debug</option>
+                            </select>
+                        </div>
+
+                        <div class="inputContainer">
+                            <label class="inputLabel" for="ProcessingTimeoutMinutes">Processing timeout (minutes)</label>
+                            <input id="ProcessingTimeoutMinutes" name="ProcessingTimeoutMinutes" type="number" step="1" is="emby-input" class="emby-input" />
+                            <div class="fieldDescription">Kill the process after this many minutes. 0 = no timeout.</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- ── Save button ──────────────────────────────────────── -->
+                <div class="verticalSection">
+                    <button is="emby-button" type="submit" class="raised button-submit block">
+                        <span>Save</span>
+                    </button>
+                </div>
+
+            </form>
+        </div>
+    </div>
+
+    <script type="text/javascript">
+    /* global ApiClient, Dashboard */
+    (function () {
+
+        // ── Tab switching ────────────────────────────────────────────────────
+        function initTabs(page) {
+            var links = page.querySelectorAll('.localnav a');
+            links.forEach(function (link) {
+                link.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    var targetId = this.getAttribute('href').replace('#', '');
+
+                    // hide all panels
+                    page.querySelectorAll('.tab-content').forEach(function (tab) {
+                        tab.style.display = 'none';
+                    });
+                    // remove active from all tabs
+                    links.forEach(function (l) { l.classList.remove('ui-btn-active'); });
+
+                    // show target panel and mark link active
+                    var target = page.querySelector('#' + targetId);
+                    if (target) target.style.display = '';
+                    this.classList.add('ui-btn-active');
+                });
+            });
+        }
+
+        // ── Populate form from config ────────────────────────────────────────
+        function loadConfig(page, config) {
+            var fields = page.querySelectorAll('input, select');
+            fields.forEach(function (field) {
+                var name = field.getAttribute('name');
+                if (!name || !(name in config)) return;
+
+                if (field.type === 'checkbox') {
+                    field.checked = config[name] === true || config[name] === 'true';
+                } else {
+                    field.value = config[name] !== null && config[name] !== undefined ? config[name] : '';
+                }
+            });
+        }
+
+        // ── Collect form values into config object ───────────────────────────
+        function collectConfig(page) {
+            var config = {};
+            var fields = page.querySelectorAll('input, select');
+            fields.forEach(function (field) {
+                var name = field.getAttribute('name');
+                if (!name) return;
+
+                if (field.type === 'checkbox') {
+                    config[name] = field.checked;
+                } else if (field.type === 'number') {
+                    config[name] = field.value === '' ? null : Number(field.value);
+                } else {
+                    config[name] = field.value;
+                }
+            });
+            return config;
+        }
+
+        // ── Page init ────────────────────────────────────────────────────────
+        document.addEventListener('pageshow', function (e) {
+            var page = e.target;
+            if (page.id !== 'CommDetectConfigPage') return;
+
+            initTabs(page);
+
+            ApiClient.getPluginConfiguration('7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c').then(function (config) {
+                loadConfig(page, config);
+            });
+        });
+
+        // ── Form submit ──────────────────────────────────────────────────────
+        document.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
+            e.preventDefault();
+            var page = document.querySelector('#CommDetectConfigPage');
+            var config = collectConfig(page);
+
+            ApiClient.updatePluginConfiguration('7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c', config).then(function () {
+                Dashboard.processPluginConfigurationUpdateResult();
+            });
+        });
+
+    }());
+    </script>
+</div>
+</body>
+</html>
