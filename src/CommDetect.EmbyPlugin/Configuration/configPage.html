@@ -829,17 +829,25 @@
             });
         }
 
+        // ── Use document.getElementById throughout so we always operate on
+        //    the actual displayed element, not a clone held by this.view ───────
+
+        function getPage()  { return document.getElementById('CommDetectConfigPage'); }
+        function getForm()  { return document.getElementById('CommDetectConfigForm'); }
+
         // ── Tab switching ────────────────────────────────────────────────────
-        function initTabs(view) {
-            var buttons = view.querySelectorAll('.cd-tab');
+        function initTabs() {
+            var page = getPage();
+            if (!page) return;
+            var buttons = page.querySelectorAll('.cd-tab');
             buttons.forEach(function (btn) {
                 btn.addEventListener('click', function () {
                     var targetId = this.getAttribute('data-target');
-                    view.querySelectorAll('.tab-content').forEach(function (tab) {
+                    page.querySelectorAll('.tab-content').forEach(function (tab) {
                         tab.style.display = 'none';
                     });
                     buttons.forEach(function (b) { b.classList.remove('ui-btn-active'); });
-                    var target = view.querySelector('#' + targetId);
+                    var target = page.querySelector('#' + targetId);
                     if (target) target.style.display = '';
                     this.classList.add('ui-btn-active');
                 });
@@ -847,9 +855,10 @@
         }
 
         // ── Populate form from config ────────────────────────────────────────
-        function loadConfig(view, config) {
-            var fields = view.querySelectorAll('input, select');
-            fields.forEach(function (field) {
+        function loadConfig(config) {
+            var form = getForm();
+            if (!form) return;
+            form.querySelectorAll('input, select').forEach(function (field) {
                 var name = field.getAttribute('name');
                 if (!name || !(name in config)) return;
                 if (field.type === 'checkbox') {
@@ -861,9 +870,11 @@
         }
 
         // ── Collect form values into config object ───────────────────────────
-        function collectConfig(view) {
+        function collectConfig() {
             var config = {};
-            view.querySelectorAll('input, select').forEach(function (field) {
+            var form = getForm();
+            if (!form) return config;
+            form.querySelectorAll('input, select').forEach(function (field) {
                 var name = field.getAttribute('name');
                 if (!name) return;
                 if (field.type === 'checkbox') {
@@ -881,14 +892,18 @@
         function View(view, params) {
             BaseView.apply(this, arguments);
 
-            view.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
-                e.preventDefault();
-                saveConfig(collectConfig(view)).then(function () {
-                    Dashboard.processPluginConfigurationUpdateResult();
-                }).catch(function () {
-                    Dashboard.processPluginConfigurationUpdateResult();
+            // Use document.getElementById so the handler is on the real element
+            var form = getForm();
+            if (form) {
+                form.addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    saveConfig(collectConfig()).then(function () {
+                        Dashboard.processPluginConfigurationUpdateResult();
+                    }).catch(function () {
+                        Dashboard.processPluginConfigurationUpdateResult();
+                    });
                 });
-            });
+            }
         }
 
         Object.assign(View.prototype, BaseView.prototype);
@@ -896,13 +911,12 @@
         View.prototype.onResume = function (options) {
             BaseView.prototype.onResume.apply(this, arguments);
             loading.show();
-            var view = this.view;
-            var form = view.querySelector('#CommDetectConfigForm');
+            var form = getForm();
             if (form) form.style.setProperty('background-color', '#ffffff', 'important');
-            initTabs(view);
+            initTabs();
             try {
                 getConfig().then(function (config) {
-                    loadConfig(view, config);
+                    loadConfig(config);
                     loading.hide();
                 }).catch(function () {
                     loading.hide();
