@@ -124,15 +124,23 @@ kldload linux64
 sysrc linux_enable="YES"
 ```
 
-Then add the linprocfs and linsysfs mounts to your jail (required for .NET's CoreCLR):
+Then mount linprocfs and linsysfs into the jail (required for .NET's CoreCLR). **Complete the jail-side steps first** (`pkg install linux_base-rl9`) before doing this, as the mount points must exist.
 
-**This step needs to be completed in the TrueNAS shell, but it will only be successful after you have installed linux_base-rl9 (with pkg install linux_base-rl9) in your jail.  
+Mount directly from the host into the jail's filesystem (replace `<jailroot>` with your jail's root path, e.g. `/mnt/Whitvol/iocage/jails/Emby/root`):
 
 ```sh
-iocage fstab -a <jailname> "linprocfs /compat/linux/proc linprocfs rw 0 0"
-iocage fstab -a <jailname> "linsysfs /compat/linux/sys linsysfs rw 0 0"
-iocage restart <jailname>
+mount -t linprocfs linprocfs <jailroot>/compat/linux/proc
+mount -t linsysfs linsysfs <jailroot>/compat/linux/sys
 ```
+
+To make these persistent across reboots, add them to the **host's** `/etc/fstab`:
+
+```
+linprocfs  <jailroot>/compat/linux/proc  linprocfs  rw  0  0
+linsysfs   <jailroot>/compat/linux/sys   linsysfs   rw  0  0
+```
+
+> **Note:** Running `mount | grep linux` inside the jail will show nothing even when the mounts are active — this is normal. You can verify by running `commdetect --version` or the test command below.
 
 #### Inside the jail
 
