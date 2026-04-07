@@ -811,12 +811,12 @@
         </div>
 
     <script type="text/javascript">
-    define(['baseView', 'emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (BaseView) {
+    define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (BaseView, loading) {
         'use strict';
 
         var pluginId = '7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c';
 
-        // ── Inject CSS into document.head (survives Emby's HTML processing) ──
+        // Fix translucent form background
         var style = document.createElement('style');
         style.textContent = '#CommDetectConfigForm { background: #fff; }';
         document.head.appendChild(style);
@@ -840,7 +840,8 @@
 
         // ── Populate form from config ────────────────────────────────────────
         function loadConfig(view, config) {
-            view.querySelectorAll('input, select').forEach(function (field) {
+            var fields = view.querySelectorAll('input, select');
+            fields.forEach(function (field) {
                 var name = field.getAttribute('name');
                 if (!name || !(name in config)) return;
                 if (field.type === 'checkbox') {
@@ -871,7 +872,9 @@
         // ── View constructor ─────────────────────────────────────────────────
         function View(view, params) {
             BaseView.apply(this, arguments);
+
             initTabs(view);
+
             view.querySelector('#CommDetectConfigForm').addEventListener('submit', function (e) {
                 e.preventDefault();
                 ApiClient.updatePluginConfiguration(pluginId, collectConfig(view)).then(function () {
@@ -884,9 +887,11 @@
 
         View.prototype.onResume = function (options) {
             BaseView.prototype.onResume.apply(this, arguments);
+            loading.show();
             var view = this.view;
             ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                 loadConfig(view, config);
+                loading.hide();
             });
         };
 
