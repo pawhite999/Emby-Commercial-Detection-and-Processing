@@ -36,7 +36,9 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IHasThumbIm
         new PluginPageInfo
         {
             Name = "CommDetect",
-            EmbeddedResourcePath = "CommDetect.EmbyPlugin.Configuration.configPage.html"
+            EmbeddedResourcePath = "CommDetect.EmbyPlugin.Configuration.configPage.html",
+            IsMainConfigPage = true,
+            DisplayName = "CommDetect - Commercial Detection and Processing"
         }
     };
 
