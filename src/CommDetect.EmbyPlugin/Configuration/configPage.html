@@ -816,11 +816,6 @@
 
         var pluginId = '7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c';
 
-        // Fix translucent form background
-        var style = document.createElement('style');
-        style.textContent = '#CommDetectConfigForm { background: #fff; }';
-        document.head.appendChild(style);
-
         // ── Tab switching ────────────────────────────────────────────────────
         function initTabs(view) {
             var buttons = view.querySelectorAll('.cd-tab');
@@ -889,6 +884,7 @@
             BaseView.prototype.onResume.apply(this, arguments);
             loading.show();
             var view = this.view;
+            view.querySelector('#CommDetectConfigForm').style.backgroundColor = '#ffffff';
             ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                 loadConfig(view, config);
                 loading.hide();
