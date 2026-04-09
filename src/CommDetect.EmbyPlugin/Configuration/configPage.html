@@ -1,24 +1,17 @@
-<div id="CommDetectConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+<style>
+#CommDetectConfigPage {
+    background-color: var(--background-color, #fff) !important;
+}
+</style>
+<div id="CommDetectConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-title="CommDetect - Commercial Detection and Processing">
     <div class="content-primary">
 
             <form id="CommDetectConfigForm">
 
-                <!-- ── Tab bar ──────────────────────────────────────────── -->
+                <!-- ── Title ────────────────────────────────────────────── -->
                 <div class="verticalSection">
                     <div class="sectionTitle" style="font-size:1.4em;margin-bottom:0.5em;">
                         CommDetect &mdash; Commercial Detection and Processing
-                    </div>
-                </div>
-
-                <div class="tabs-wrapper" style="margin-bottom:1em;">
-                    <div style="display:flex;flex-wrap:wrap;gap:4px;">
-                        <button type="button" class="cd-tab ui-btn ui-btn-active" data-target="tab-general">General</button>
-                        <button type="button" class="cd-tab ui-btn" data-target="tab-detection">Detection</button>
-                        <button type="button" class="cd-tab ui-btn" data-target="tab-detectors">Detectors</button>
-                        <button type="button" class="cd-tab ui-btn" data-target="tab-processing">Processing</button>
-                        <button type="button" class="cd-tab ui-btn" data-target="tab-encoding">Encoding</button>
-                        <button type="button" class="cd-tab ui-btn" data-target="tab-logging">Logging &amp; Output</button>
-                        <button type="button" class="cd-tab ui-btn" data-target="tab-advanced">Advanced</button>
                     </div>
                 </div>
 
@@ -128,6 +121,11 @@
                             </label>
                         </div>
                     </div>
+
+                    <div class="cd-nav" style="display:flex;gap:8px;margin-top:1.5em;">
+                        <button type="button" class="cd-back emby-button raised">&#8592; Back</button>
+                        <button type="button" class="cd-next emby-button raised">Next &#8594;</button>
+                    </div>
                 </div>
 
                 <!-- ════════════════════════════════════════════════════════
@@ -193,6 +191,11 @@
                                 <span>Enable XDS (Extended Data Services) parsing</span>
                             </label>
                         </div>
+                    </div>
+
+                    <div class="cd-nav" style="display:flex;gap:8px;margin-top:1.5em;">
+                        <button type="button" class="cd-back emby-button raised">&#8592; Back</button>
+                        <button type="button" class="cd-next emby-button raised">Next &#8594;</button>
                     </div>
                 </div>
 
@@ -377,6 +380,11 @@
                             <label class="inputLabel" for="AudioFingerprintWeight">Weight</label>
                             <input id="AudioFingerprintWeight" name="AudioFingerprintWeight" type="number" step="0.01" is="emby-input" class="emby-input" />
                         </div>
+                    </div>
+
+                    <div class="cd-nav" style="display:flex;gap:8px;margin-top:1.5em;">
+                        <button type="button" class="cd-back emby-button raised">&#8592; Back</button>
+                        <button type="button" class="cd-next emby-button raised">Next &#8594;</button>
                     </div>
                 </div>
 
@@ -565,6 +573,11 @@
                             <div class="fieldDescription">Key=value pairs to inject, comma-separated.</div>
                         </div>
                     </div>
+
+                    <div class="cd-nav" style="display:flex;gap:8px;margin-top:1.5em;">
+                        <button type="button" class="cd-back emby-button raised">&#8592; Back</button>
+                        <button type="button" class="cd-next emby-button raised">Next &#8594;</button>
+                    </div>
                 </div>
 
                 <!-- ════════════════════════════════════════════════════════
@@ -673,6 +686,11 @@
                             <div class="fieldDescription">Integrated loudness target in LUFS, e.g. <code>-16</code>.</div>
                         </div>
                     </div>
+
+                    <div class="cd-nav" style="display:flex;gap:8px;margin-top:1.5em;">
+                        <button type="button" class="cd-back emby-button raised">&#8592; Back</button>
+                        <button type="button" class="cd-next emby-button raised">Next &#8594;</button>
+                    </div>
                 </div>
 
                 <!-- ════════════════════════════════════════════════════════
@@ -729,6 +747,11 @@
                                 <option value="log_dir">log_dir</option>
                             </select>
                         </div>
+                    </div>
+
+                    <div class="cd-nav" style="display:flex;gap:8px;margin-top:1.5em;">
+                        <button type="button" class="cd-back emby-button raised">&#8592; Back</button>
+                        <button type="button" class="cd-next emby-button raised">Next &#8594;</button>
                     </div>
                 </div>
 
@@ -798,6 +821,11 @@
                             <div class="fieldDescription">Kill the process after this many minutes. 0 = no timeout.</div>
                         </div>
                     </div>
+
+                    <div class="cd-nav" style="display:flex;gap:8px;margin-top:1.5em;">
+                        <button type="button" class="cd-back emby-button raised">&#8592; Back</button>
+                        <button type="button" class="cd-next emby-button raised">Next &#8594;</button>
+                    </div>
                 </div>
 
                 <!-- ── Save button ──────────────────────────────────────── -->
@@ -809,130 +837,10 @@
 
             </form>
         </div>
+
+
+        <img src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+             style="display:none;position:absolute"
+             onload="if(window.CommDetect_run){CommDetect_run()}else{var s=document.createElement('script');s.src='/web/configurationpage?name=commdetectjs';document.head.appendChild(s)}">
+
 </div>
-define(['baseView', 'loading', 'emby-input', 'emby-button', 'emby-select', 'emby-checkbox'], function (BaseView, loading) {
-        'use strict';
-
-        var pluginId = '7c4e8f3a-2d51-4b69-9c87-0f3e2a1d5b6c';
-        console.log('CommDetect: module loaded');
-
-        function getConfig() {
-            return ApiClient.getJSON(ApiClient.getUrl('Plugins/' + pluginId + '/Configuration'));
-        }
-
-        function saveConfig(config) {
-            return ApiClient.ajax({
-                type: 'POST',
-                url: ApiClient.getUrl('Plugins/' + pluginId + '/Configuration'),
-                data: JSON.stringify(config),
-                contentType: 'application/json'
-            });
-        }
-
-        // ── Use document.getElementById throughout so we always operate on
-        //    the actual displayed element, not a clone held by this.view ───────
-
-        function getPage()  { return document.getElementById('CommDetectConfigPage'); }
-        function getForm()  { return document.getElementById('CommDetectConfigForm'); }
-
-        // ── Tab switching ────────────────────────────────────────────────────
-        function initTabs() {
-            var page = getPage();
-            if (!page) return;
-            var buttons = page.querySelectorAll('.cd-tab');
-            buttons.forEach(function (btn) {
-                btn.addEventListener('click', function () {
-                    var targetId = this.getAttribute('data-target');
-                    page.querySelectorAll('.tab-content').forEach(function (tab) {
-                        tab.style.display = 'none';
-                    });
-                    buttons.forEach(function (b) { b.classList.remove('ui-btn-active'); });
-                    var target = page.querySelector('#' + targetId);
-                    if (target) target.style.display = '';
-                    this.classList.add('ui-btn-active');
-                });
-            });
-        }
-
-        // ── Populate form from config ────────────────────────────────────────
-        function loadConfig(config) {
-            var form = getForm();
-            if (!form) return;
-            form.querySelectorAll('input, select').forEach(function (field) {
-                var name = field.getAttribute('name');
-                if (!name || !(name in config)) return;
-                if (field.type === 'checkbox') {
-                    field.checked = config[name] === true || config[name] === 'true';
-                } else {
-                    field.value = (config[name] !== null && config[name] !== undefined) ? config[name] : '';
-                }
-            });
-        }
-
-        // ── Collect form values into config object ───────────────────────────
-        function collectConfig() {
-            var config = {};
-            var form = getForm();
-            if (!form) return config;
-            form.querySelectorAll('input, select').forEach(function (field) {
-                var name = field.getAttribute('name');
-                if (!name) return;
-                if (field.type === 'checkbox') {
-                    config[name] = field.checked;
-                } else if (field.type === 'number') {
-                    config[name] = field.value === '' ? null : Number(field.value);
-                } else {
-                    config[name] = field.value;
-                }
-            });
-            return config;
-        }
-
-        // ── View constructor ─────────────────────────────────────────────────
-        function View(view, params) {
-            BaseView.apply(this, arguments);
-            console.log('CommDetect: View constructor, form:', !!getForm(), 'page:', !!getPage());
-
-            // Use document.getElementById so the handler is on the real element
-            var form = getForm();
-            if (form) {
-                form.addEventListener('submit', function (e) {
-                    e.preventDefault();
-                    saveConfig(collectConfig()).then(function () {
-                        Dashboard.processPluginConfigurationUpdateResult();
-                    }).catch(function () {
-                        Dashboard.processPluginConfigurationUpdateResult();
-                    });
-                });
-            }
-        }
-
-        Object.assign(View.prototype, BaseView.prototype);
-
-        View.prototype.onResume = function (options) {
-            BaseView.prototype.onResume.apply(this, arguments);
-            console.log('CommDetect: onResume, form:', !!getForm(), 'page:', !!getPage());
-            loading.show();
-            var form = getForm();
-            if (form) {
-                form.style.setProperty('background-color', '#ffffff', 'important');
-                console.log('CommDetect: background set, computed:', form.style.backgroundColor);
-            }
-            initTabs();
-            try {
-                getConfig().then(function (config) {
-                    console.log('CommDetect: config loaded ok');
-                    loadConfig(config);
-                    loading.hide();
-                }).catch(function (err) {
-                    console.log('CommDetect: getConfig failed', err);
-                    loading.hide();
-                });
-            } catch (e) {
-                console.log('CommDetect: getConfig threw', e);
-                loading.hide();
-            }
-        };
-
-        return View;
-});
