@@ -124,6 +124,11 @@ kldload linux64
 sysrc linux_enable="YES"
 ```
 
+> **TrueNAS CORE:** `sysrc linux_enable="YES"` may not reliably fire before jails start on TrueNAS. Add a guaranteed startup hook via **System → Init/Shutdown Scripts → Add**:
+> - Type: **Command**, Command: `kldload linux64`, When: **Pre Init**
+>
+> This ensures linux64 is loaded before any jail starts, surviving power outages and reboots.
+
 Then mount linprocfs and linsysfs into the jail (required for .NET's CoreCLR). **Complete the jail-side steps first** (`pkg install linux_base-rl9`) before doing this, as the mount points must exist.
 
 Mount directly from the host into the jail's filesystem (replace `<jailroot>` with your jail's root path, e.g. `/mnt/Whitvol/iocage/jails/Emby/root`):
