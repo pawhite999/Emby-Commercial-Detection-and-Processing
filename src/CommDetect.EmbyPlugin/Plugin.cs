@@ -85,8 +85,17 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IHasThumbIm
         if (string.IsNullOrEmpty(dir))
             return;
 
-        File.WriteAllText(Path.Combine(dir, "commdetect.ini"), BuildCommdetectIni(cfg), Encoding.UTF8);
-        File.WriteAllText(Path.Combine(dir, "comprocess.ini"), BuildComprocessIni(cfg), Encoding.UTF8);
+        // Match the same search order as the commdetect binary: prefer the config/
+        // subdirectory if ini files already exist there, otherwise write next to the binary.
+        var configSubDir = Path.Combine(dir, "config");
+        var writeDir = Directory.Exists(configSubDir) &&
+                       (File.Exists(Path.Combine(configSubDir, "commdetect.ini")) ||
+                        File.Exists(Path.Combine(configSubDir, "comprocess.ini")))
+                       ? configSubDir
+                       : dir;
+
+        File.WriteAllText(Path.Combine(writeDir, "commdetect.ini"), BuildCommdetectIni(cfg), Encoding.UTF8);
+        File.WriteAllText(Path.Combine(writeDir, "comprocess.ini"), BuildComprocessIni(cfg), Encoding.UTF8);
     }
 
     private static string BuildCommdetectIni(PluginConfiguration c)

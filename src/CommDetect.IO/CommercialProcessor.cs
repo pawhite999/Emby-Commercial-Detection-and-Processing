@@ -105,13 +105,13 @@ public class CommercialProcessor
                     break;
             }
 
-            // Handle the original file
-            if (config.Mode != ProcessingMode.Skip && result.Success)
+            result.Success = true;
+
+            // Handle the original file — only when processing actually ran (not Skip mode)
+            if (config.Mode != ProcessingMode.Skip)
             {
                 await HandleOriginalFileAsync(analysisResult.SourceFile, config);
             }
-
-            result.Success = true;
             result.CompletedUtc = DateTime.UtcNow;
 
             double removedSeconds = commercialSegments.Sum(s => s.DurationSeconds);
