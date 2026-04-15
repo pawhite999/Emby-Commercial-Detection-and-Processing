@@ -67,10 +67,17 @@ public class Plugin : BasePlugin<PluginConfiguration>, IHasWebPages, IHasThumbIm
         {
             WriteIniFiles(Configuration);
         }
-        catch
+        catch (Exception ex)
         {
-            // Non-fatal — Emby config is saved regardless; ini write failure
-            // is logged but does not prevent the plugin from functioning.
+            // Non-fatal — Emby config is saved regardless.
+            // Write error details to a temp file so the user can diagnose.
+            try
+            {
+                File.WriteAllText(
+                    Path.Combine(Path.GetTempPath(), "commdetect-plugin-error.txt"),
+                    $"{DateTime.UtcNow:u} WriteIniFiles failed: {ex}");
+            }
+            catch { }
         }
     }
 
