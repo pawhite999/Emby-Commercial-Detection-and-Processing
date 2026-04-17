@@ -124,8 +124,8 @@ kldload linux64
 sysrc linux_enable="YES"
 ```
 
-> **TrueNAS CORE:** `sysrc linux_enable="YES"` may not reliably fire before jails start on TrueNAS. Add a guaranteed startup hook via **System → Init/Shutdown Scripts → Add**:
-> - Type: **Command**, Command: `kldload linux64`, When: **Pre Init**
+> **TrueNAS CORE:** `sysrc linux_enable="YES"` may not reliably fire before jails start on TrueNAS. Add a guaranteed startup hook via **Tasks → Init/Shutdown Scripts → Add**:
+> - Type: **Command**, Command: `service linux onestart`, When: **Pre Init**
 >
 > This ensures linux64 is loaded before any jail starts, surviving power outages and reboots.
 
@@ -169,6 +169,7 @@ mkdir -p /var/log/commdetect/log /var/log/commdetect/edl
 mkdir -p /var/tmp/commdetect
 chmod 777 /var/log/commdetect/log /var/log/commdetect/edl /var/tmp/commdetect
 ```
+There are several other specialized config files in the config folder that you can also download and use.  They function to over-ride commdetect.ini for special cases/shows.  Some of them are currently labelled as channel config files (e.g. metv.ini, cbs.ini, great-tv.ini), but Emby does not provide channel information for programs, so these files are meant to be used to create show-specific .ini files for those networks (for instance, change metv.ini with cp metv.ini mash.ini to create a specific .ini file for the program M*A*S*H or to whatever program on the network MeTV you wish).  The show-specific .ini files extend the effectiveness of commdetect.ini to specialized cases that may not be as effectively processed without them.
 
 #### Configuration
 
